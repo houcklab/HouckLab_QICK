@@ -224,7 +224,8 @@ Prerequisites for all of them: stages 2-6 done on this qubit, the device file cu
 - `charge_transmission_sweep`: resonator transmission at each bias (heatmap plus tracked
   frequency). Returns the bias to the start value on error or Ctrl-C.
 - `two_tone_charge_dispersion_quasicw`, `charge_dispersion_quasicw`: quasi-CW telegraph at a
-  chosen doublet peak.
+  chosen doublet peak. The parity rate comes from an HMM on the self-calibrated record; at the
+  CSTQ03 relax delays there are under 3 samples per 2.5 ms dwell and the run warns.
 - `charge_dispersion_ramsey`: needs tuned pi and pi/2, and a frequency at a charge-dispersion
   extremum. It currently fails with `KeyError: 'df'` on the CSTQ03 parameter set.
 - Bias: record the chosen point in `Qubit.bias_v`. CSTQ03 note: 0.0059 V gave good T2R.
@@ -236,9 +237,14 @@ Before the first record ([experiments/modified_ramsey.md](experiments/modified_r
 1. Measure the doublet independently and set `ParityParams.df_mhz` and `f_upper_mhz` (the upper
    branch, not the centre). The step does not search for it and never moves the bias.
 2. Check df against sigma: df < 1/(8 sigma) without echo, 1/(16 sigma) with echo (sigma 0.1 us:
-   1.25 MHz; 0.22 us: 0.57 MHz). Pick tau = k/(2 df) with the smallest odd k that keeps the
-   echo_null control feasible (tau > 8 sigma). See the CSTQ03 df = 2.7 MHz example in
-   [devices/CSTQ03.md](devices/CSTQ03.md#modified-ramsey-at-df--27-mhz-timing-choice).
+   1.25 MHz; 0.22 us: 0.57 MHz). Pick tau = k/(2 df) with odd k. The echo_null control needs
+   tau > 8 sigma to be feasible, and it is a null only for pulses short against 1/df
+   ([experiments/modified_ramsey.md](experiments/modified_ramsey.md#echo-is-a-null-only-for-short-pulses)):
+   choose sigma and k so that the `echo_null` variant from `build_control_variants` has
+   `mr_null_control_valid` True. See the CSTQ03 df = 2.7 MHz example in
+   [devices/CSTQ03.md](devices/CSTQ03.md#modified-ramsey-at-df--27-mhz-timing-choice) (at sigma
+   0.1 us the echo is infeasible at k = 3 and not a null at k = 5; at sigma 0.04 us, k = 3 it is
+   a valid null).
 3. Validate active reset with [`active_reset_verify`](experiments/active_reset_verify.md). Working reset: prep `|e>` with reset ON gives
    P(g) >= 0.9 x P(g) of prep `|g>` with reset ON, and recovery P(g | e, ON) - P(g | e, OFF) >= 0.3,
    flat across repeated reads. `reset_readout_relax_delay` >= about 6/kappa with kappa the
@@ -248,10 +254,14 @@ Before the first record ([experiments/modified_ramsey.md](experiments/modified_r
    showed incomplete inter-shot reset faking a kHz parity rate at relax 0.
 5. Take many dwells (CSTQ03: 100k shots at 250 us relax, about 10 500 dwells), keep
    `hmm_min_emission_snr` at 0.7, and interleave the `flip_final_pi2` and `echo_null` controls.
-   Good: flip preserves the telegraph and inverts occupancy, echo suppresses it, and HMM, ACF and
-   PSD rates agree within 3x.
+   Good: flip preserves the telegraph and inverts occupancy, echo suppresses it (only decisive when
+   the echo is a valid null, `mr_null_control_valid` True; otherwise it is reported as "not a null
+   at these settings" and excluded), and HMM, ACF and PSD rates agree within 3x.
 
-`modified_ramsey_control` repeats the measurement at the charge sweet spot as a null.
+`modified_ramsey_control` repeats the measurement at the charge sweet spot as a null: the same
+sequence and analysis, built from `ModifiedRamsey_params` (pass it), so a valid null reads
+`identifiable = False`, r(1) near 0 and a lag-covariance ratio to the MR record near 0 (its ACF
+amplitude is NaN: there is nothing to fit).
 
 ### Zero-span parity
 

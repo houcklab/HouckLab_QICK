@@ -5,9 +5,15 @@ from datetime import datetime
 
 import matplotlib.pyplot as plt
 import numpy as np
-from scipy.signal import find_peaks
 
 from qicklab.analysis.iq import project_iq_signal
+from qicklab.analysis.spectroscopy import (
+    choose_two_tone_freqs_from_lorentz_or_peaks,
+    fit_charge_dispersion_splitting,
+    fit_doublet_mean,
+    refit_doublet_jointly,
+    single_line_splitting_bound,
+)
 from qicklab.core.config import sanity_dump
 from qicklab.core.experiment import finish
 from qicklab.experiments.qubit_spec import QubitSpecSliceFF
@@ -57,7 +63,73 @@ def _hold_npz(voltage_pts, v_hold, acq_times):
     }
 
 
-def run_charge_sweep(ctx, Spec_relevant_params):
+# points per S period (S(V) repeats every cd_period_mv/2) below which the grid gets a warning
+CHARGE_GRID_MIN_PTS_PER_S_PERIOD = 8
+
+
+def report_grid_sampling(voltage_pts, cd_period_mv=None):
+    """Print the charge grid's range, step and points per mV; with a known period, its points per
+    S period, and a WARNING when |step| > T_S / CHARGE_GRID_MIN_PTS_PER_S_PERIOD.
+
+    T_S = cd_period_mv / 2: the modified_ramsey_control model S(V) = cd_max |cos(2 pi (V - V0)/T)|
+    repeats every T/2 (the conservative reading). Never raises. Returns the points per S period
+    (NaN when the period is unknown). docs/experiments/charge_sweep.md#sampling-the-period
+    """
+    v_mv = 1e3 * np.asarray(voltage_pts, dtype=float)
+    step = abs(v_mv[1] - v_mv[0]) if v_mv.size > 1 else float("nan")
+    print(
+        f"[ChargeSweep] grid {v_mv[0]:.4g} to {v_mv[-1]:.4g} mV, {v_mv.size} points, "
+        f"step {step:.4g} mV ({1.0 / step:.3g} points per mV)"
+    )
+    if cd_period_mv is None or not np.isfinite(step):
+        print("[ChargeSweep] charge-dispersion period unknown: sampling not checked")
+        return float("nan")
+    t_s = float(cd_period_mv) / 2.0
+    pts = t_s / step
+    print(
+        f"[ChargeSweep] {pts:.2f} points per S period (T_S = cd_period_mv/2 = {t_s:.4g} mV), "
+        f"{(v_mv[-1] - v_mv[0]) / t_s:.2f} S periods covered"
+    )
+    if pts < CHARGE_GRID_MIN_PTS_PER_S_PERIOD:
+        print(
+            f"WARNING: [ChargeSweep] step {step:.4g} mV > T_S/{CHARGE_GRID_MIN_PTS_PER_S_PERIOD} "
+            f"= {t_s / CHARGE_GRID_MIN_PTS_PER_S_PERIOD:.4g} mV: the splitting vs bias is "
+            "undersampled and the map aliases (docs/experiments/charge_sweep.md)"
+        )
+    return pts
+
+
+def _pad2(values):
+    out = np.full(2, np.nan)
+    values = np.asarray(values if values is not None else [], dtype=float).ravel()[:2]
+    out[: values.size] = values
+    return out
+
+
+def _slice_doublet(data_spec, min_sep, fit_window):
+    """Parity doublet of one displayed slice for the splitting fit.
+
+    Returns (choice, refit, censor): the selection (choose_two_tone_freqs_from_lorentz_or_peaks),
+    the joint two-Lorentzian refit of a selected pair (refit_doublet_jointly; None when there is
+    no pair or the refit fails) and, for a single_line_unresolved slice, the upper bound on its
+    hidden splitting (single_line_splitting_bound), else NaN.
+    """
+    choice = choose_two_tone_freqs_from_lorentz_or_peaks(data_spec, min_sep_mhz=min_sep)
+    refit, censor = None, np.nan
+    if len(choice["freqs"]) == 2:
+        refit = refit_doublet_jointly(data_spec, choice["freqs"], fit_window, min_sep)
+    elif choice["source"] == "single_line_unresolved":
+        censor = single_line_splitting_bound(data_spec, min_sep)
+    return choice, refit, censor
+
+
+def run_charge_sweep(ctx, Spec_relevant_params, cd_period_mv=None):
+    """QubitSpecSliceFF at every charge bias -> heatmap, parity doublet per slice, splitting fit.
+
+    cd_period_mv (optional): the device's charge-dispersion period T (modified_ramsey_control
+    convention) for the grid-sampling check and the fit's alias guard.
+    docs/experiments/charge_sweep.md
+    """
     cfg = ctx.working_config()
     sanity_dump(cfg)
     cfg["reps"] = Spec_relevant_params["reps"]
@@ -68,7 +140,19 @@ def run_charge_sweep(ctx, Spec_relevant_params):
         cfg["sigma"] = Spec_relevant_params["sigma"]
         cfg["qubit_gain"] = Spec_relevant_params["gain"]
 
-    voltage_pts = np.arange(cfg["voltage_start"], cfg["voltage_end"], cfg["voltage_step"])
+    voltage_pts = charge_sweep_voltages(cfg, {})
+    if not ctx.yoko_fixed:
+        report_grid_sampling(voltage_pts, cd_period_mv)
+    min_sep = Spec_relevant_params["min_sep_MHz"]
+    nv = len(voltage_pts)
+    doublet_freqs = np.full((nv, 2), np.nan)
+    refit_freqs = np.full((nv, 2), np.nan)
+    refit_hwhm = np.full((nv, 2), np.nan)
+    doublet_amp = np.full((nv, 2), np.nan)
+    partner_snr = np.full(nv, np.nan)
+    censor_mhz = np.full(nv, np.nan)
+    sources = [""] * nv
+    lorentz = {k: np.full((nv, 2), np.nan) for k in ("centers", "fwhm", "r2")}
     # yoko_fixed: rows are repeats in time at the held bias, read back once
     v_hold = float(ctx.yoko.query(":SOUR:LEV?")) if ctx.yoko_fixed else None
     acq_times = []
@@ -79,9 +163,6 @@ def run_charge_sweep(ctx, Spec_relevant_params):
     im = None
     cbar = None
     for i, voltage in enumerate(voltage_pts):
-        if voltage > 10:
-            print("voltage too high")
-            break
         if ctx.yoko_fixed:
             acq_times.append(_record_hold(cfg, i, voltage, v_hold))
         else:
@@ -97,7 +178,7 @@ def run_charge_sweep(ctx, Spec_relevant_params):
             data_specSlice,
             plotDisp=False,
             figNum=2,
-            min_sep=Spec_relevant_params["min_sep_MHz"],
+            min_sep=min_sep,
             fit_window_mhz=Spec_relevant_params["fit_window_mhz"],
             prominent_ratio=Spec_relevant_params["prominent_ratio"],
         )
@@ -105,20 +186,25 @@ def run_charge_sweep(ctx, Spec_relevant_params):
         avgi = np.array(data_specSlice["data"]["avgi"][0][0])
         avgq = np.array(data_specSlice["data"]["avgq"][0][0])
         avgamp0 = project_iq_signal(avgi, avgq)
-        # up to two tallest peaks >= 0.05 MHz apart, sorted by frequency (printed only)
-        min_spacing = 0.05
-        dx = np.mean(np.diff(x_pts))
-        min_distance_pts = max(1, int(np.ceil(min_spacing / dx)))
-
-        peak_inds, _ = find_peaks(avgamp0, distance=min_distance_pts)
-        if len(peak_inds) > 0:
-            peak_inds = peak_inds[np.argsort(avgamp0[peak_inds])[::-1][:2]]
-            peak_inds = peak_inds[np.argsort(x_pts[peak_inds])]
-            peak_freqs = x_pts[peak_inds]
-        else:
-            peak_freqs = np.array([])
-
-        print("peak freqs:", peak_freqs)
+        # parity doublet of this slice: one frequency when unresolved or not significant
+        choice, refit, censor_mhz[i] = _slice_doublet(
+            data_specSlice, min_sep, Spec_relevant_params["fit_window_mhz"]
+        )
+        freqs = np.asarray(choice["freqs"], dtype=float)
+        doublet_freqs[i] = _pad2(freqs)
+        doublet_amp[i] = _pad2([avgamp0[int(np.argmin(np.abs(x_pts - f)))] for f in freqs])
+        partner_snr[i] = np.nan if choice["partner_snr"] is None else choice["partner_snr"]
+        sources[i] = choice["source"]
+        if refit is not None:
+            refit_freqs[i], refit_hwhm[i] = refit["centers"], refit["hwhm"]
+        for key in lorentz:
+            lorentz[key][i] = _pad2(data_specSlice["data"].get("lorentz_" + key))
+        sep_txt = ""
+        if refit is not None:
+            sep_txt = f", joint-fit sep {refit['centers'][1] - refit['centers'][0]:.4f} MHz"
+        elif len(freqs) == 2:
+            sep_txt = ", joint refit failed (slice dropped from the splitting fit)"
+        print(f"doublet: {np.round(freqs, 4)} MHz{sep_txt} ({choice['source']})")
         if avgamp_map is None:
             avgamp_map = np.full((len(voltage_pts), len(x_pts)), np.nan)
             plt.ion()
@@ -164,16 +250,100 @@ def run_charge_sweep(ctx, Spec_relevant_params):
         if ctx.yoko_fixed
         else {"voltage_pts": voltage_pts}
     )
+    # splitting and mean from the joint refit: NaN where one line or where the refit failed
+    sep = refit_freqs[:, 1] - refit_freqs[:, 0]
+    f_mean = 0.5 * (refit_freqs[:, 0] + refit_freqs[:, 1])
+    # no splitting information: a partner that failed the significance gate, a failed refit
+    exclude = (np.array(sources) == "partner_not_significant") | (
+        np.isfinite(doublet_freqs[:, 1]) & ~np.isfinite(sep)
+    )
+    fit = _splitting_fit(
+        voltage_pts, sep, f_mean, exclude, censor_mhz, cd_period_mv, ctx.yoko_fixed
+    )
     np.savez(
         Instance_specSlice.fname[:-3] + "_ChargeSweepHeatmap.npz",
         avgamp_map=avgamp_map,
         x_pts=x_pts,
         yoko_fixed=bool(ctx.yoko_fixed),
+        doublet_freqs_mhz=doublet_freqs,
+        doublet_refit_mhz=refit_freqs,
+        doublet_refit_hwhm_mhz=refit_hwhm,
+        doublet_amp=doublet_amp,
+        doublet_source=np.array(sources),
+        partner_snr=partner_snr,
+        censor_limit_mhz=censor_mhz,
+        sep_mhz=sep,
+        f_mean_mhz=f_mean,
+        lorentz_centers_mhz=lorentz["centers"],
+        lorentz_fwhm_mhz=lorentz["fwhm"],
+        lorentz_r2=lorentz["r2"],
+        **fit,
         **axis,
     )
 
     plt.ioff()
     plt.close(fig)
+
+
+def _splitting_fit(voltage_pts, sep, f_mean, exclude, censor_mhz, cd_period_mv, yoko_fixed):
+    """Fit and print sep(V) and f_mean(V); returns the npz fields (fit_*, prior_cd_period_mv).
+
+    sep: the joint-refit splitting. single_line_unresolved slices are censored at censor_mhz
+    (per slice, single_line_splitting_bound; NaN: dropped); `exclude` (partner not significant,
+    joint refit failed) is dropped. Diagnostic only: nothing is written back.
+    """
+    nan = float("nan")
+    if yoko_fixed:
+        cd = {"status": "yoko_fixed", "message": "no bias axis: the bias was held"}
+        line = {}
+    else:
+        cd = fit_charge_dispersion_splitting(
+            voltage_pts,
+            sep,
+            censored_below_mhz=censor_mhz,
+            cd_period_mv=cd_period_mv,
+            exclude=exclude,
+        )
+        line = fit_doublet_mean(voltage_pts, f_mean)
+    out = {
+        "prior_cd_period_mv": nan if cd_period_mv is None else float(cd_period_mv),
+        "fit_status": cd["status"],
+        "fit_message": cd["message"],
+        "fit_cd_max_mhz": cd.get("cd_max_mhz", nan),
+        "fit_cd_max_err_mhz": cd.get("cd_max_err_mhz", nan),
+        "fit_s_period_mv": cd.get("s_period_mv", nan),
+        "fit_s_period_err_mv": cd.get("s_period_err_mv", nan),
+        "fit_cd_period_mv": cd.get("cd_period_mv", nan),
+        "fit_cd_period_err_mv": cd.get("cd_period_err_mv", nan),
+        "fit_v0_mv": cd.get("v0_mv", nan),
+        "fit_v0_err_mv": cd.get("v0_err_mv", nan),
+        "fit_f0_mhz": line.get("f0_mhz", nan),
+        "fit_f0_err_mhz": line.get("f0_err_mhz", nan),
+        "fit_f_slope_mhz_per_mv": line.get("slope_mhz_per_mv", nan),
+        "fit_f_slope_err_mhz_per_mv": line.get("slope_err_mhz_per_mv", nan),
+    }
+    if yoko_fixed:
+        return out
+    print(f"[ChargeSweep] doublet resolved in {int(np.isfinite(sep).sum())}/{len(sep)} slices")
+    if cd["status"] == "ok":
+        print(
+            "[ChargeSweep] sep(V) = cd_max |cos(pi (V - V0)/T_S)|: "
+            f"cd_max = {cd['cd_max_mhz']:.4f} +- {cd['cd_max_err_mhz']:.4f} MHz, "
+            f"T_S = {cd['s_period_mv']:.4f} +- {cd['s_period_err_mv']:.4f} mV "
+            f"(cd_period_mv = 2 T_S = {cd['cd_period_mv']:.4f} +- {cd['cd_period_err_mv']:.4f}), "
+            f"V0 = {cd['v0_mv']:.4f} +- {cd['v0_err_mv']:.4f} mV"
+        )
+        if cd["message"]:
+            print(f"[ChargeSweep] note: {cd['message']}")
+    else:
+        print(f"[ChargeSweep] splitting fit {cd['status']}: {cd['message']}")
+    if np.isfinite(out["fit_f0_mhz"]):
+        print(
+            f"[ChargeSweep] f_mean = {out['fit_f0_mhz']:.4f} +- {out['fit_f0_err_mhz']:.4f} MHz, "
+            f"slope {out['fit_f_slope_mhz_per_mv']:.4g} +- "
+            f"{out['fit_f_slope_err_mhz_per_mv']:.2g} MHz/mV"
+        )
+    return out
 
 
 def charge_sweep_voltages(cfg, params):

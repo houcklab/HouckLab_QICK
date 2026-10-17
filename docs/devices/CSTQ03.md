@@ -179,11 +179,15 @@ tau = k / (2 df) with odd k (CSTQ03 Q2 parameters, 2026-08-04, sigma = 0.1 us):
 |---|---|---|
 | 1 | 0.185 us | infeasible: the two pi/2 envelopes already span 4 sigma = 0.4 us; the program raises |
 | 3 | 0.5556 us | gap 0.156 us, realised phase 3.0008 pi, mapping contrast 1.000; but echo_null needs tau > 8 sigma = 0.80 us, so it is skipped and `all_expected` is forced False |
-| 5 | 0.9259 us | echo gap 0.063 us, realised phase 4.997 pi; keeps the measurement and its null. Recommended. |
+| 5 | 0.9259 us | echo gap 0.063 us, realised phase 4.997 pi; echo_null is feasible but, at sigma = 0.1 us, not a null: it keeps 0.641 contrast against the main 0.732 (symmetric), so `build_control_variants` marks it "not a null at these settings" |
 
-Normally prefer the smallest feasible odd k (T2* is worst at maximum charge sensitivity), but
-not at the cost of echo_null, the most decisive control. The legacy runner still has `df` = 1,
-`tau_harmonic_k` = 1, which contradicts this analysis.
+Normally prefer the smallest feasible odd k (T2* is worst at maximum charge sensitivity). k = 5
+was recommended on the premise that it keeps echo_null as a decisive control, but at sigma =
+0.1 us the finite-pulse echo is not a null at either k (skipped at k = 3, not a null at k = 5;
+see [the echo null](../experiments/modified_ramsey.md#echo-is-a-null-only-for-short-pulses)).
+The echo becomes a usable null only at shorter sigma (sigma = 0.04 us, k = 3: echo 0.063
+against main 0.960). The legacy runner still has `df` = 1, `tau_harmonic_k` = 1, which
+contradicts this analysis.
 
 ### Unresolved drive-bandwidth limit (df = 2.7 MHz, sigma = 0.1 us)
 
@@ -225,13 +229,20 @@ The legacy runner has `mr_relax_delay` = 500 us with the comment "5x T1=50us" (5
 
 ### HMM emission gate (CSTQ03 Q2, 2026-08-04)
 
-The gate tests analog SNR x |p_e(state1) - p_e(state0)| using the assumed mapping probabilities
-(0.1, 0.9). At the measured analog SNR of about 0.77 the product is about 0.62, under the 0.7
-default, so the HMM withholds a rate. That is bookkeeping, not physics (per-dwell separation is
-about 8.8 at about 213 samples per dwell). **Do not lower the gate.** At 0.3 the HMM returned
+On 2026-08-04 the gate tested analog SNR x |p_e(state1) - p_e(state0)| using the assumed mapping
+probabilities (0.1, 0.9). At the measured analog SNR of about 0.77 the product was about 0.62,
+under the 0.7 default, so the HMM withheld a rate. That is bookkeeping, not physics (per-dwell
+separation is about 8.8 at about 213 samples per dwell). The mapping is now fitted with the rate
+(`hmm_fit_mapping`, default True) and the gate uses the fitted probabilities, with the same 0.7
+threshold: at this analog SNR it passes only for a fitted contrast above about 0.92. **Do not lower the gate.** At 0.3 the HMM returned
 4921 +/- 68 Hz while ACF gave 9606 Hz and PSD 15056 Hz (more than 3x apart, auto-flagged), and the
-echo_null control, which cannot contain parity contrast, showed 44% of the parity record's ACF
-amplitude: the fit locked onto the 50-200 us shot-to-shot correlation above. 0.7 correctly
+echo_null control showed 44% of the parity record's ACF amplitude. That was read at the time as
+proof that the correlation is not parity, on the premise that the echo cannot contain parity
+contrast; the premise is wrong at sigma = 0.1 us, df = 2.7 MHz (the finite-pulse echo is
+predicted to keep 0.77 of the parity ACF amplitude, see
+[the echo null](../experiments/modified_ramsey.md#echo-is-a-null-only-for-short-pulses)), so the
+echo does not decide the question; the HMM / ACF / PSD disagreement and the drive_off diagnostic
+do. The fit locked onto the 50-200 us shot-to-shot correlation above. 0.7 correctly
 withheld the number; `None` keeps 0.7. History: an older comment in the Modified Ramsey run code
 advised lowering the gate deliberately; this measurement supersedes it.
 

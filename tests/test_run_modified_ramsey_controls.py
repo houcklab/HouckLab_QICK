@@ -70,6 +70,7 @@ class _Ctx:
         self.qubit_sigma = sigma
         self.qubit_flattop = None
         self.Qubit_Readout = [2]
+        self.Qubit_Pulse = 2
         self.soc = None
         self.soccfg = None
 
@@ -91,14 +92,16 @@ def _analysis_result():
 @pytest.fixture
 def fakes(monkeypatch):
     _FakeMR.instances = []
-    calls = {"analyze": [], "compare": []}
+    calls = {"analyze": [], "analyze_kwargs": [], "compare": [], "compare_controls": []}
 
     def analyze(*args, **kwargs):
         calls["analyze"].append(kwargs["base_name"])
+        calls["analyze_kwargs"].append(kwargs)
         return _analysis_result()
 
     def compare(parity, controls):
         calls["compare"].append([c["control_type"] for c in controls])
+        calls["compare_controls"].append([dict(c) for c in controls])
         return {"all_expected": True}
 
     sep = {"data_ss": None, "g_center": np.array([-1.0, 0.0]), "e_center": np.array([1.0, 0.0])}
@@ -229,3 +232,96 @@ def test_infeasible_control_skipped_and_recorded(fakes, tmp_path, capsys):
     assert [s["control_type"] for s in index["skipped"]] == ["echo_null"]
     assert "need df <" in index["skipped"][0]["reason"]
     assert "every validation control was skipped" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    "sigma, k, echo_valid",
+    [
+        # df 2.7 MHz, symmetric: the finite-pulse echo keeps 0.641 against 0.732 -> not a null
+        (0.1, 5, False),
+        # short pulses: echo 0.063 against 0.960 -> a valid null
+        (0.04, 3, True),
+    ],
+)
+def test_echo_null_validity_reaches_comparison(fakes, tmp_path, sigma, k, echo_valid):
+    # F31: the run must hand build_control_variants' null_control_valid / null_invalid_reason
+    # to compare_parity_controls, or a non-null echo would be judged as a null.
+    outer = str(tmp_path) + "/"
+    mr_runs.run_modified_ramsey(
+        _Ctx(outer, sigma=sigma), _params(parity_analysis_enabled=True, tau_harmonic_k=k)
+    )
+    ((flip, echo),) = fakes["compare_controls"]
+    assert flip["control_type"] == "flip_final_pi2"
+    assert flip["null_control_valid"] is None and flip["null_invalid_reason"] == ""
+    assert echo["control_type"] == "echo_null"
+    assert echo["null_control_valid"] is echo_valid
+    if echo_valid:
+        assert echo["null_invalid_reason"] == ""
+    else:
+        assert echo["null_invalid_reason"].startswith("not a null at these settings")
+    # the same verdict travels in the saved control cfg
+    echo_cfg = [c for c in _FakeMR.instances if c.path == "ModifiedRamsey_Controls"][1].cfg
+    assert echo_cfg["mr_null_control_valid"] is echo_valid
+
+
+def test_tau_offset_and_drive_detuned_predictions_reach_comparison(fakes, tmp_path):
+    # F39: with no control_tau_offset_frac the run builds the even-harmonic tau null from the
+    # programmed k, and hands null_control_valid / inverted_mapping_expected to the comparison.
+    outer = str(tmp_path) + "/"
+    params = _params(
+        parity_analysis_enabled=True,
+        tau_harmonic_k=3,
+        symmetric_ramsey=False,
+        validation_controls=["tau_offset", "drive_detuned"],
+    )
+    mr_runs.run_modified_ramsey(_Ctx(outer, sigma=0.04), params)
+    ((tau, det),) = fakes["compare_controls"]
+    assert tau["control_type"] == "tau_offset" and tau["null_control_valid"] is True
+    assert tau["inverted_mapping_expected"] is None
+    assert det["control_type"] == "drive_detuned" and det["inverted_mapping_expected"] is True
+    assert det["inverted_mapping_reason"] == ""  # no active reset: no reset-pi gate
+    assert det["null_control_valid"] is None
+    tau_cfg = [c for c in _FakeMR.instances if c.path == "ModifiedRamsey_Controls"][0].cfg
+    assert abs(tau_cfg["ramsey_tau_us"] - 4 / (2 * 2.7)) < 1e-12
+
+
+@pytest.mark.parametrize(
+    "overrides, fitted, seeded, source",
+    [
+        # default: fit the mapping, seeded from the prediction
+        ({}, True, True, "predicted"),
+        # fixed at mapping_p_e_state0/1
+        ({"hmm_fit_mapping": False}, False, False, "assumed"),
+        # the hmm_kwargs escape hatch turns the fit off the same way: the idealised
+        # prediction must never become the FIXED mapping the emission gate trusts
+        ({"hmm_kwargs": {"fit_mapping": False}}, False, False, "assumed"),
+        # and turns it on even with hmm_fit_mapping=False
+        ({"hmm_fit_mapping": False, "hmm_kwargs": {"fit_mapping": True}}, True, True, "predicted"),
+        # seeded at the calibration
+        ({"mapping_probabilities_calibrated": True}, True, False, "calibrated"),
+    ],
+)
+def test_mapping_fit_seed_reaches_analysis(fakes, tmp_path, overrides, fitted, seeded, source):
+    # F30: the parity record and its controls are analysed with fit_mapping and one seed, the
+    # predicted mapping of the parity sequence (ascending: state1 = the larger P(e)).
+    from qicklab.experiments.modified_ramsey import predicted_mapping_seed
+
+    outer = str(tmp_path) + "/"
+    params = _params(
+        parity_analysis_enabled=True,
+        tau_harmonic_k=3,
+        symmetric_ramsey=False,
+        mapping_p_e_state0=0.2,
+        mapping_p_e_state1=0.7,
+        **overrides,
+    )
+    mr_runs.run_modified_ramsey(_Ctx(outer, sigma=0.04), params)
+    parent = _FakeMR.instances[0]
+    p0, p1, src = predicted_mapping_seed(parent.cfg, fallback=(0.2, 0.7))
+    assert src == "predicted" and p0 < p1
+    expected = (p0, p1) if seeded else (0.2, 0.7)
+    assert len(fakes["analyze_kwargs"]) == 3  # parity + flip + echo
+    for kw in fakes["analyze_kwargs"]:
+        assert kw["fit_mapping"] is fitted
+        assert tuple(kw["mapping_probabilities"]) == pytest.approx(expected)
+        assert kw["mapping_seed_source"] == source

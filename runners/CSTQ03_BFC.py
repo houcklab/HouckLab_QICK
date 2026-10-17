@@ -351,9 +351,11 @@ ModifiedRamsey_params = {
     # BUT k=3 silently costs the echo_null control: the echo uses THREE pulses
     # and TWO gaps, so it needs tau > 8*sigma = 0.80 us. At tau=0.5556 us
     # build_control_variants marks echo_null infeasible and SKIPS it (correctly,
-    # and it forces all_expected=False). echo_null is the single most decisive
-    # control, so k=5 is the better trade: tau=0.9259 us, echo gap 0.063 us,
-    # realized phase 4.997*pi -- keeps both the measurement and its null.
+    # and it forces all_expected=False). k=5 makes the echo feasible (tau=0.9259
+    # us, echo gap 0.063 us, realized phase 4.997*pi), but at sigma=0.1 us the
+    # finite-pulse echo is NOT a null: it keeps 0.64 contrast against 0.73, so
+    # build_control_variants marks it "not a null at these settings" (see
+    # docs/experiments/modified_ramsey.md#echo-is-a-null-only-for-short-pulses).
     "tau_harmonic_k": 1,
     # f_ge is the UPPER parity branch, NOT the doublet centre. Read the class
     # docstring in mModifiedRamsey.py: the lower branch is taken as f_ge - df,
@@ -426,8 +428,11 @@ ModifiedRamsey_params = {
     # Primary parity-rate analysis uses the continuous IQ trace and an exact
     # two-state HMM. Each parity state is a calibrated g/e mixture, so these
     # probabilities describe Ramsey mapping fidelity rather than assuming a
-    # perfect 0/1 map. Replace the starting values with measured mapping
-    # probabilities once a device-specific calibration is available.
+    # perfect 0/1 map. They are fitted with the rate (hmm_fit_mapping, default
+    # True), seeded from the predicted mapping of the sequence; the values below
+    # are the fallback seed, or the fixed mapping with hmm_fit_mapping=False.
+    # Set mapping_probabilities_calibrated=True once they come from a
+    # device-specific calibration (they then seed the fit).
     "parity_analysis_enabled": False,
     "expected_parity_dwell_ms": 2.5,
     "drift_window_ms": 200.0,
@@ -439,21 +444,26 @@ ModifiedRamsey_params = {
     # Per-SAMPLE emission-separation gate inside fit_two_state_hmm.
     #
     # NOTE the emission separation the gate tests is
-    #     analog_readout_snr * |mapping_p_e_state1 - mapping_p_e_state0|
-    # i.e. it uses the ASSUMED mapping probabilities above, so improving the
-    # real mapping (symmetric_ramsey) does NOT move this number until you also
-    # update those probabilities from a measurement. At the measured analog SNR
-    # of ~0.77 the product is ~0.62, just under the 0.7 default -> the HMM
-    # withholds rates. That is a bookkeeping outcome, not a physics one: at
-    # ~213 samples per dwell the per-DWELL separation is ~8.8.
+    #     analog_readout_snr * |p_e_state1 - p_e_state0|
+    # at the FITTED mapping probabilities (hmm_fit_mapping). On 2026-08-04 it
+    # used the ASSUMED probabilities above (the mapping was fixed then): at the
+    # measured analog SNR of ~0.77 the product was ~0.62, just under the 0.7
+    # default -> the HMM withheld rates. That is a bookkeeping outcome, not a
+    # physics one: at ~213 samples per dwell the per-DWELL separation is ~8.8.
+    # At that analog SNR the gate now passes only for a fitted contrast
+    # |p_e_state1 - p_e_state0| above ~0.92.
     #
     # DO NOT lower this to force a fit. Measured on CSTQ03 Q2 2026-08-04: at
     # 0.3 the HMM returned a confident-looking 4921 +/- 68 Hz, but ACF said
     # 9606 Hz and PSD said 15056 Hz (>3x disagreement, auto-flagged), and the
-    # echo_null control -- which CANNOT contain parity contrast, since a Hahn
-    # echo refocuses the static df -- showed 44% of the parity record's ACF
-    # amplitude. So the fit was locking onto a ~50-200 us shot-to-shot
-    # correlation that is NOT charge parity (see mr_relax_delay below).
+    # echo_null control showed 44% of the parity record's ACF amplitude. (That
+    # was read as proof the correlation is not parity, on the premise that a
+    # Hahn echo cannot contain parity contrast. The premise is wrong at
+    # sigma=0.1 us, df=2.7 MHz: the finite-pulse echo is predicted to keep 0.77
+    # of the parity ACF amplitude, so the echo does not decide it; the
+    # HMM/ACF/PSD disagreement and the drive_off diagnostic do.) So the fit was
+    # locking onto a ~50-200 us shot-to-shot correlation that is NOT charge
+    # parity (see mr_relax_delay below).
     # 0.7 correctly withheld that number. None -> keep the 0.7 library default.
     "hmm_min_emission_snr": None,
     # Escape hatch for any other fit_two_state_hmm kwarg (e.g. min_transitions).
@@ -462,7 +472,10 @@ ModifiedRamsey_params = {
     # must preserve the telegraph and invert occupancy; echo must suppress it.
     "validation_controls": ["flip_final_pi2", "echo_null"],
     "validation_controls_every_n_cycles": 10,
-    "control_tau_offset_frac": 0.25,
+    # None -> tau_offset at the predicted null next to (k+1)/(2 df) (symmetric: solved, a few %
+    # below the even harmonic, docs/experiments/modified_ramsey.md#analysis); a fraction f
+    # gives the programmed tau x (1 + f) (0.25 keeps most of the contrast: no null).
+    "control_tau_offset_frac": None,
     "control_detuning_mhz": None,
     # Parity -> computational-state mapping (closing pi/2 phase). Opt-in; default
     # off preserves the original standard-scheme behavior.
@@ -567,9 +580,12 @@ ModifiedRamsey_Control_params = {
     # sweet spot is flagged as verified.  Either way the Ramsey still runs.
     "sweet_spot_max_df_mhz": 0.1,
     # --- Modified Ramsey settings at the sweet spot ---
-    # tau is computed from S1 (the separation found at V1), NOT from S_sweet
-    # (which is ~0), so it matches the tau that ModifiedRamsey would use at V1.
-    # f_ge is set from the two-tone at V_sweet (average of peaks, or single peak).
+    # The Ramsey is the modified_ramsey sequence built from ModifiedRamsey_params
+    # (df, tau_harmonic_k, mr_reps, mr_relax_delay, pulses, active reset) and
+    # analysed like an MR record; f_ge is the line found at V_sweet. The two keys
+    # below are used only when ModifiedRamsey_params is not passed (then df =
+    # cd_max_mhz). With the MR values (50000 x ~512 us) a record is ~26 s, plus
+    # the search spectra, so 1000 cycles is many hours.
     "mr_relax_delay": 0.0,  # us after final readout; separate from search relax_delay
     "mr_reps": 500,
     # hysteresis / moving-average: set via setdefault below (same as ModifiedRamsey)
@@ -946,7 +962,7 @@ if Run2ToneChargeDispersionQuasiCW:
 if RunModifiedRamsey:
     run_modified_ramsey(ctx, ModifiedRamsey_params)
 if RunModifiedRamsey_Control:
-    run_modified_ramsey_control(ctx, ModifiedRamsey_Control_params)
+    run_modified_ramsey_control(ctx, ModifiedRamsey_Control_params, ModifiedRamsey_params)
 if RunChargeDispersionQuasiCW:
     run_charge_dispersion_quasicw(ctx, ChargeDispersion_params, Spec_relevant_params)
 if RunChargeDispersionRamsey:
@@ -966,7 +982,9 @@ if RunT2E:
 if RunTrans_QubitSpec:
     run_trans_qubit_spec(ctx, Spec_relevant_params, T1T2_params)
 if RunChargeSweep:
-    run_charge_sweep(ctx, Spec_relevant_params)
+    run_charge_sweep(
+        ctx, Spec_relevant_params, cd_period_mv=ModifiedRamsey_Control_params["cd_period_mv"]
+    )
 if RunChargeTransmissionSweep:
     run_charge_transmission_sweep(ctx, ChargeTransmission_params)
 if RunActiveResetVerify:

@@ -32,6 +32,27 @@ at centre − df/2, i.e. on the lower branch with a 90° closing phase, and the 
 looks like a contrast failure rather than a misconfiguration. In qicklab,
 `symmetric_ramsey=True` with no `parity.f_upper_mhz` on the device raises instead.
 
+### f_ge must sit on the pulsed qubit
+
+The pi/2 and pi gains and the SingleShot separator all come from `Qubit_Pulse`, at
+`Qubit_Parameters[Qubit_Pulse]["Qubit"]["Frequency"]`. Nothing else ties `f_ge` to that
+qubit, so an `f_ge` hundreds of MHz away would run a full record with no drive on the
+qubit. Before any acquisition, `run_modified_ramsey` compares the doublet centre
+`f_ge − df/2` with that frequency (`check_f_ge_near_qubit`). The tolerance is
+max(5·df, 2 MHz, 1/(4σ)), where 1/(4σ) is roughly the bandwidth of the 4σ Gaussian
+(3.1 MHz at σ = 0.08 µs). Outside it the run prints a `WARNING` with f_ge, df, the
+centre, the qubit frequency, `Qubit_Pulse` and the offset. It raises ValueError instead
+when `require_f_ge_near_qubit=True`.
+
+The check only warns by default because the CSTQ03 runner trips it (see
+[known issues](#known-issues)). `qubit_frequency_center` is never updated by a
+calibration step, so a stale `Qubit_Parameters` entry also trips it. That is correct:
+the separator is then calibrated off-resonance too.
+
+If `f_ge_measured_at_V` is set (the bias at which df and f_ge were measured), the run
+saves it in the record config and warns when the yoko readback differs from it by more
+than 0.1 mV. It never moves the yoko.
+
 ### Standard vs symmetric scheme
 
 | | Standard (`symmetric_ramsey=False`) | Symmetric (`symmetric_ramsey=True`) |
@@ -43,6 +64,11 @@ looks like a contrast failure rather than a misconfiguration. In qicklab,
 | Mapping | upper → \|g>, lower → \|e> | upper → \|e>, lower → \|g> |
 | `flip_final_pi2=True` | 0°, mapping swapped | 270°, mapping swapped |
 
+- The phase and mapping rows are for k = 1 (tau = 1/(2·df)). For odd k the standard
+  scheme is unchanged (the lower branch accrues kπ ≡ π). In the symmetric scheme the
+  branches accrue ±kπ/2: ±π/2 for k ≡ 1 mod 4 (k = 1, 5, …), but ∓π/2 for k ≡ 3 mod 4
+  (k = 3, 7, …), where the mapping is swapped (upper → |g>, lower → |e>; flip swaps it
+  back). The contrast is the same.
 - The closing phase is `(base + 180·flip) mod 360`.
 - The generator DDS is free-running and phase-coherent across the wait. Phase 0 on
   the first pulse and 180° on the last are therefore exact inverses, independent of
@@ -55,7 +81,8 @@ looks like a contrast failure rather than a misconfiguration. In qicklab,
 ### Choosing tau: `tau = k/(2·df)` with odd k
 
 - The parity condition is "relative phase = π mod 2π". Any **odd** k satisfies it with
-  identical mapping contrast.
+  identical mapping contrast (in the symmetric scheme the orientation alternates with
+  k mod 4, see above).
 - k = 1 is shortest (least T2 decay, and T2* is worst at maximum charge sensitivity),
   but it requires the pulses to fit inside tau.
 - Raising k to the next odd value relaxes the timing without changing σ or df.
@@ -105,11 +132,58 @@ worst exactly when the doublet was best resolved.
 - The saved `drive_bandwidth_ratio` tells you how degraded a record is.
 - Raise the limit only deliberately, and treat such a record as degraded.
 
-### Echo is a null, not a measurement
+### Echo is a null only for short pulses
 
 `use_pi_pulse=True` inserts a Hahn echo, which refocuses the static detuning df, i.e.
-exactly the parity phase. The echo sequence has zero parity contrast by construction.
-Use it only as a negative control (`echo_null`).
+exactly the parity phase. Use it only as a negative control (`echo_null`). Its parity
+contrast is zero only for pulses short against 1/df: with finite pulses the branch
+detuning also acts during the pulses, and the echo pi, detuned from at least one branch,
+rotates the two branches differently. It is then itself parity-dependent, and the echo
+can keep most of the contrast, or more than the measurement has.
+
+`predict_parity_mapping` (in `qicklab.experiments.modified_ramsey`) gives the predicted
+P(e|upper), P(e|lower) and contrast |P(e|upper) − P(e|lower)| of the programmed sequence
+for an ideal two-level qubit:
+
+- nominal 4σ truncated Gaussians, each with its on-resonance area calibrated to π/2 (the
+  echo pi: π, phase 0, the same envelope);
+- the branch detuning f_branch − f_drive acting during the pulses and the gaps;
+- pulses centre-to-centre at tau, with the pi at tau/2;
+- the closing phase from the same rule as the program (90° / 180°, + 180° with flip).
+
+It is a piecewise-constant 2×2 propagator, 200 steps per pulse; it agrees with an
+independent `solve_ivp` integration to < 10⁻³ (`tests/test_mr_echo_null_prediction.py`).
+It has no T2, no readout or thermal error, and no cycle quantisation, so it overstates
+|P(e|upper) − P(e|lower)|. The absolute branch labels assume the phase convention of the
+table above, including its k mod 4 rule for the symmetric scheme (at k = 3 the predicted
+upper branch maps to |g>); the contrast does not depend on it.
+
+At df = 2.7 MHz (CSTQ03 Q2), symmetric scheme:
+
+| σ (µs) | k | main contrast | echo contrast | (echo / main)² |
+|---|---|---|---|---|
+| 0.1 | 5 | 0.732 | 0.641 | 0.77 |
+| 0.0739 | 5 | 0.859 | 0.450 | 0.27 |
+| 0.05 | 5 | 0.938 | 0.217 | 0.054 |
+| 0.04 | 3 | 0.960 | 0.063 | 0.004 |
+
+In the standard scheme at σ = 0.1 µs, k = 5 the echo keeps 0.884 against a main contrast
+of 0.127: it is more parity-sensitive than the measurement.
+
+`build_control_variants` stores the prediction for every control (in its cfg, so in its
+h5 `config` and json): `mr_predicted_p_e_upper`, `mr_predicted_p_e_lower`,
+`mr_predicted_contrast` (`drive_off`: 0). For `echo_null` it also stores
+`mr_predicted_residual_ratio` (echo contrast / the parity run's predicted contrast) and
+`mr_null_control_valid`. When the ratio exceeds `ECHO_NULL_MAX_PREDICTED_RESIDUAL_RATIO`
+= 0.2, the echo is **"not a null at these settings"**: it is still acquired, but
+`compare_parity_controls` excludes it from the decisive checks, with the reason. The limit
+is deliberately strict. The lag-covariance statistic scales as contrast², so a ratio of
+0.2 lets a genuine parity telegraph leave ≈ 0.04 in the echo, a sixth of the 0.25
+decision threshold; the margin covers what the model leaves out (an echo dephases less
+than the Ramsey, so the real ratio can be larger than predicted). The cost: σ = 0.05 µs,
+k = 5 (ratio 0.23) is also excluded. Beyond the controls, the prediction of the parity
+sequence only seeds the HMM's mapping fit (`predicted_mapping_seed`, see
+[Analysis](#analysis)); the fitted mapping, not the prediction, enters the emission gate.
 
 ## Pulse sequence
 
@@ -160,8 +234,9 @@ PLAN = [
 Hardware-free feasibility check before a cooldown: `plan_parity_mapping(df_mhz,
 sigma_us, use_pi_pulse=..., symmetric_ramsey=..., tau_us=...)` returns `feasible`,
 `errors`, `tau_us`, `gap_us`, `df_max_mhz`, `rabi_pi2_mhz`, `bandwidth_ratio`,
-`final_pi2_phase_deg`, …. It uses **nominal** 4σ envelopes; the program reports the
-quantised values.
+`final_pi2_phase_deg`, `predicted_mapping` (see
+[the echo null](#echo-is-a-null-only-for-short-pulses); None without a gap), …. It uses
+**nominal** 4σ envelopes; the program reports the quantised values.
 
 What one run does:
 
@@ -187,6 +262,8 @@ keys (`df`, `f_ge`, mapping probabilities) resolve from the device in qicklab.
 |---|---|---|---|
 | `df` | 1 | MHz | Physical parity-branch splitting. Must be measured independently. Sets tau. |
 | `f_ge` | 3754.5 | MHz | **Upper** parity branch. Required with `symmetric_ramsey`. |
+| `require_f_ge_near_qubit` | False (code fallback) | bool | Raise, instead of warning, when `f_ge − df/2` is off the `Qubit_Pulse` frequency (see [f_ge must sit on the pulsed qubit](#f_ge-must-sit-on-the-pulsed-qubit)). |
+| `f_ge_measured_at_V` | None (code fallback) | V | Bias at which df and f_ge were measured. Saved in the record config when set; a different current bias only warns. |
 | `tau_harmonic_k` | 1 | odd int | tau = k/(2·df). Use the smallest feasible odd k (see feasibility). |
 | `symmetric_ramsey` | True | bool | Drive at the midpoint, closing phase 90°. Code fallback False. |
 | `flip_final_pi2` | False | bool | +180° on the closing pi/2 (swaps the mapping). |
@@ -210,14 +287,15 @@ keys (`df`, `f_ge`, mapping probabilities) resolve from the device in qicklab.
 | `drift_window_ms` | 200.0 | ms | Rolling-mean drift window (≥ 20× dwell). |
 | `hmm_symmetric` | True | bool | Fit one symmetric rate. |
 | `hmm_bootstrap_samples` | 0 | count | Parametric bootstrap for rate CIs. |
-| `mapping_p_e_state0` / `mapping_p_e_state1` | 0.1 / 0.9 | prob. | Assumed P(e) for each parity state. |
-| `mapping_probabilities_calibrated` | False | bool | False adds an explicit warning. |
-| `hmm_min_emission_snr` | None (→ 0.7) | ratio | Per-sample emission gate. **Do not lower** (see findings). |
+| `hmm_fit_mapping` | True (code fallback) | bool | Fit P(e) of each parity state jointly with the rate (record and controls). False: fixed at `mapping_p_e_state0/1`. `hmm_kwargs["fit_mapping"]`, if set, overrides it. |
+| `mapping_p_e_state0` / `mapping_p_e_state1` | 0.1 / 0.9 | prob. | Fixed P(e) for each parity state with `hmm_fit_mapping=False`; otherwise the seed when the mapping is calibrated, or the fallback seed when the predicted one is unavailable. |
+| `mapping_probabilities_calibrated` | False | bool | True: the values above are a calibration (they seed the fit instead of the prediction). False with `hmm_fit_mapping=False` adds an explicit warning. |
+| `hmm_min_emission_snr` | None (→ 0.7) | ratio | Per-sample emission gate, at the fitted mapping. **Do not lower** (see findings). |
 | `hmm_kwargs` | None | dict | Other `fit_two_state_hmm` kwargs (e.g. `min_transitions`, `max_mixing`). |
 | `validation_controls` | ["flip_final_pi2", "echo_null"] | list | Controls to interleave. Acquired whether or not `parity_analysis_enabled`. |
 | `validation_controls_every_n_cycles` | 10 | cycles | Control cadence. |
-| `control_tau_offset_frac` | 0.25 | fraction | `tau_offset` control. |
-| `control_detuning_mhz` | None (→ +df) | MHz | `drive_detuned` control. |
+| `control_tau_offset_frac` | None (→ predicted null) | fraction | `tau_offset` control: None sets the predicted null next to the programmed k/(2·df): the even harmonic (k+1)/(2·df) in the standard scheme, the solved zero a few % below it in the symmetric one (see [controls](#analysis)); a fraction f sets the programmed tau × (1 + f). Code fallback None. |
+| `control_detuning_mhz` | None (→ +df) | MHz | `drive_detuned` control (+df: an inverted mapping; with active reset decisive only when the reset pi still works at the detuned drive, see [controls](#analysis)). |
 | `average_n_shots` | 50 | shots | Legacy hard-threshold plot only. Code fallback 25. |
 
 The program also reads `sigma`, `pi2_gain`, `pi_gain`, `flattop_length` (must be
@@ -249,9 +327,16 @@ Per cycle:
   record's h5 path) and `mr_parent_cycle_idx`).
 - **Analysis files** in `<outer>/ModifiedRamsey/<YYYY_MM_DD>/` with base
   `Cycle_<nnn>_MR_<ts>`:
-  - `_continuous_analysis.json` and `_continuous_analysis.h5` (`v_projected`,
-    `v_corrected`, `drift`, `t_s`, `posterior_state1`, `viterbi_path`, summary
-    attrs);
+  - `_continuous_analysis.json` (summary, plus `acf` with the fit values, `r1` and
+    `lag_covariance_sum` with its bootstrap, `readout_separation` (the true-state
+    separation of the clean clouds when the mixture fit is resolved, else the raw
+    labelled-set separation, still shrunk by the SingleShot e purity),
+    `readout_separation_source` (`clean_cloud_source`) and `readout_prep_e_predicted`
+    (the SingleShot pi's predicted e purity at this record's branches,
+    `predicted_singleshot_prep`; None for a flat-top pulse), `psd`,
+    `rate_vs_bin`, ...; modified_ramsey_control compares its null with the newest of
+    these) and `_continuous_analysis.h5` (`v_projected`, `v_corrected`, `drift`, `t_s`,
+    `posterior_state1`, `viterbi_path`, summary attrs);
   - plots `_continuous_{calibration,projected_trace,hmm,acf_psd,rate_vs_bin,dwells,reset_success}.png`;
   - per control, the same files with `_<control>`; plus `_control_comparison.json`
     (analysis on) or `_controls_index.json` (analysis off: `cycle_idx`,
@@ -275,6 +360,26 @@ diagnostics only.
    - LDA axis, CDF-gap threshold, confusion matrix;
    - contrast C and `assignment_fidelity = (1+C)/2`, analog SNR.
    - Warnings: analog SNR < 1, contrast < 0.3, < 500 labelled shots per class.
+   - **Clean clouds.** The pi pulse of the SingleShot calibration plays at the
+     doublet centre, df/2 from both parity branches, so at a bandwidth-limited σ
+     part of the "e" shots stay in g (Bloch estimate: P(e) ≈ 0.51 at σ = 0.1 µs,
+     ≈ 0.90 at σ = 0.04 µs for df = 2.7 MHz). Their moments put `proj_e_mean`
+     toward g, inflate `proj_e_sigma` and understate `snr_analog` (true SNR 2 with
+     half the e shots in g reads ≈ 0.8). A joint two-Gaussian mixture fit of both
+     projected labelled sets (shared component means and sigmas, σ_e/σ_g in
+     [0.8, 1.25], one e weight per set) gives `proj_{g,e}_{mean,sigma}_clean`,
+     `snr_analog_clean`, the e-cloud purity `prep_fidelity_e` and the g set's e
+     weight `prep_excited_g`. The purity counts pi-pulse error **and** decay during
+     readout (the MR readout has the same tail), not prep error alone. The mixture
+     is used only when it raises the joint log-likelihood by 2ΔlnL ≥ 9
+     (`mixture_2dlnl`) over the pure fit, which uses each set's own raw moments with
+     no bound on σ_e/σ_g (so a pure but wider or narrower e cloud is not mistaken
+     for a mixture, and `mixture_2dlnl` can be negative); otherwise the clean clouds
+     are the moments (`clean_cloud_source` = `moments`). An e weight < 0.2 or a clean SNR < 1 falls
+     back to the moments with a warning (`moments_fallback`). A purity < 0.9 warns.
+     The raw keys (`proj_*`, `snr_analog`, contrast, threshold, confusion matrix)
+     keep their meaning; the reset threshold and `rate_vs_bin_size` do not use the
+     clean clouds.
 2. **Projection** onto the calibrated axis, giving an analog trace v(t). The time
    base is the emitted-schedule rep period.
 3. **Drift removal.** A centred rolling **mean** over `drift_window_ms`. A rolling
@@ -283,18 +388,57 @@ diagnostics only.
 4. **Two-state HMM.** Log-space forward-backward with exact `expm(Q·dt)` transitions.
    - Each parity state emits a calibrated g/e **mixture** with weights
      `p_e_state0/1`.
-   - The weights `p_e_state0/1` (default 0.1/0.9) are **assumed**. Replace them
-     with values from a device-specific mapping calibration once one exists; g/e
-     readout fidelity alone is not enough. Until then, every rate is conditional on
-     the assumption, and a warning says so.
+   - The weights `p_e_state0/1` are **fitted** with the rate (`hmm_fit_mapping`,
+     default True; `fit_two_state_hmm(fit_mapping=True)`), as logits bounded to ±8,
+     with the readout clouds (`mu_g`, `mu_e`, `sigma_g`, `sigma_e`) fixed at the
+     SingleShot calibration. A fixed wrong mapping biases the rate: a record with
+     real contrast 0.5 analysed with (0.1, 0.9) reads several times fast with a
+     small error bar, or is withheld as unresolved (`tests/test_hmm_fit_mapping.py`).
+     The rate error comes from the Hessian over the rate and the mapping logits, so
+     it carries the mapping uncertainty (a logit at its bound, P(e) within 3·10⁻⁴ of
+     0 or 1, is held fixed). The summary, `_analysis.json` and `_analysis.h5`
+     attributes report the fitted `mapping_p_e_state0_fit/1_fit`, their errors, the
+     `emission_snr` the gate saw (`emission_snr_seed` at the seed), the free-P(e)
+     i.i.d. null's `iid_p_e`, and `mapping_seed_source` (`predicted`,
+     `fallback: <why>`, `calibrated`, or `assumed` for a fixed mapping);
+     `mapping_p_e_state0/1` are the seed. The fit costs about 3× a rate-only fit
+     (≈ 3 s at 5·10⁴ shots); with `hmm_bootstrap_samples` every resample refits the
+     mapping too.
+   - Seed: the predicted mapping of the parity sequence (`predicted_mapping_seed`,
+     from `plan_parity_mapping`), in ascending order, so `state1` is the state with
+     the larger P(e), as in the (0.1, 0.9) default. It falls back to
+     `mapping_p_e_state0/1` when the plan is infeasible or the predicted contrast is
+     below `MAPPING_SEED_MIN_PREDICTED_CONTRAST` = 0.1; a calibrated mapping
+     (`mapping_probabilities_calibrated=True`) is the seed instead. The controls of a
+     cycle reuse the parity record's seed and fit their own mapping; since the seed
+     order fixes the labels (a fit that converges swapped is relabelled), `state1` is
+     the larger-P(e) state in every record, which the `flip_final_pi2` occupancy
+     inversion relies on.
+   - With `hmm_fit_mapping=False` (or `hmm_kwargs={"fit_mapping": False}`, which
+     takes precedence in the run as in the analysis) the weights are fixed at
+     `mapping_p_e_state0/1` (default 0.1/0.9), never at the prediction. Unless `mapping_probabilities_calibrated`, every rate is then
+     conditional on an assumption, and a warning says so; g/e readout fidelity alone
+     does not calibrate them.
    - State labels are neutral (`state0`/`state1`): mapping them to even/odd charge
      parity needs physics input the analysis does not have.
-   - Emissions are fixed during the rate fit (refitting would absorb drift).
+   - The readout clouds are fixed during the fit (refitting them would absorb drift).
+     They are the **clean** clouds of step 1 when the mapping is fitted or
+     calibrated, the raw moments when it is a fixed assumption
+     (`analyze_modified_ramsey_record(clean_readout_clouds=None)`; True or False
+     forces it, and clean clouds with an assumed fixed mapping warn, since they
+     raise the emission SNR the gate sees while the assumed p's carry the same
+     bandwidth loss). The summary and `_analysis.json` record `readout_clouds`
+     (`clean`/`raw`), `snr_analog_clean`, `prep_fidelity_e`, `prep_excited_g` and
+     `clean_cloud_source`; `snr_analog` stays the raw number.
    - Symmetric rate by default: charge parity has no preferred branch.
    - The initial rate is 1/`expected_parity_dwell_ms`. The documented BFC operating
      point is a 2–3 ms dwell; 2.5 ms corresponds to γ = 200 Hz.
    - **Identifiability gates.** All must pass, otherwise rates are NaN with reasons:
-     - per-sample emission SNR ≥ `min_emission_snr` (0.7);
+     - per-sample emission SNR ≥ `min_emission_snr` (0.7), at the fitted mapping
+       (`emission_snr`; at the seed `emission_snr_seed`). It is checked after the fit,
+       and the other gates are still evaluated and reported. A record whose fitted
+       contrast is too low for the readout SNR is withheld here even though the seed
+       would pass;
      - expected transitions ≥ 10;
      - log-likelihood gain over a single Gaussian ≥ 10 (`delta_loglik`). This only
        shows the readout is bimodal: uncorrelated g/e shots pass it by thousands;
@@ -304,7 +448,9 @@ diagnostics only.
        the same readout but no temporal correlation. The weight is free even for
        a symmetric fit: P(e) ≠ 1/2 (T1 decay during τ, a mapping offset) would
        otherwise let the symmetric HMM beat a 1/2 null without any switching.
-       With `fit_emissions=True` the null refits its own means and sigmas too.
+       With `fit_emissions=True` the null refits its own means and sigmas too; with
+       the mapping fitted, the null is the g/e mixture with its own free P(e)
+       (`iid_p_e`), the i.i.d. limit over every mapping.
        This is the evidence for switching: uncorrelated shots, an ideal
        `echo_null`, or a dephased record (T2 ≪ τ, unresolved df) give ≈ 0–1 or
        less (the gain is negative when a symmetric HMM is misspecified), a
@@ -341,9 +487,9 @@ diagnostics only.
 | Control | Change | Expected signature | Decision |
 |---|---|---|---|
 | `flip_final_pi2` | +180° closing phase | Telegraph amplitude and rates unchanged; occupancy inverted | Fails unless ACF amplitude ratio > 0.25 **and** the effective HMM rate (γ01 + γ10)/2 agrees with the parity record's (a rate fails only if it differs by more than 3 combined 1σ errors **and** by more than a factor 2, so ordinary drift between the two records is tolerated; when the HMM reports no finite rate errors, the factor-2 rule decides alone). Then, if \|occ1_main − 0.5\| > 0.15: passes when \|occ1_flip − (1 − occ1_main)\| < 0.15, else fails; if \|occ1_main − 0.5\| ≤ 0.15: "inversion uninformative" (not decisive) |
-| `echo_null` | `use_pi_pulse=True` | Contrast suppressed (echo refocuses df) | Passes if the control HMM is unidentifiable by its i.i.d. gate, **or** the lag-covariance ratio's 95% upper bound < 0.25. Fails regardless when the ratio's 5% lower bound is ≥ 0.25 (the telegraph survived) |
-| `tau_offset` | programmed tau × (1 + frac) | Off the π condition: contrast reduced or rotated | Informational |
-| `drive_detuned` | drive + detuning (default +df), bandwidth limit lifted | Both branches off-resonant, mapping degraded | Informational |
+| `echo_null` | `use_pi_pulse=True` | Contrast suppressed (echo refocuses df), only for short pulses | Passes if the control HMM is unidentifiable by its i.i.d. gate, **or** the lag-covariance ratio's 95% upper bound < 0.25. Fails regardless when the ratio's 5% lower bound is ≥ 0.25 (the telegraph survived). When its control dict carries `null_control_valid=False` (predicted to keep > 0.2× the parity contrast, see [the echo null](#echo-is-a-null-only-for-short-pulses)): "not a null at these settings" (not decisive) |
+| `tau_offset` | default: the predicted null next to the programmed k/(2·df), i.e. the even harmonic (k+1)/(2·df) (standard scheme) or the solved zero of the predicted contrast a few % below it (symmetric scheme); or programmed tau × (1 + `control_tau_offset_frac`) | Both branches end in the same state, contrast suppressed (a null) | When its control dict carries `null_control_valid=True` (predicted to keep ≤ 0.2× the parity contrast): judged as `echo_null` (i.i.d. HMM gate or lag-covariance ratio 95% upper bound < 0.25; fails when the 5% lower bound is ≥ 0.25). Otherwise informational |
+| `drive_detuned` | drive + detuning (default +df), bandwidth limit lifted | +df adds a common phase 2π·df·tau = kπ (k odd): mapping **inverted** at about full contrast, a second flip control, not a null | When its control dict carries `inverted_mapping_expected=True` (predicted contrast ≤ −0.8× the parity run's and, with `use_active_reset`, the reset pi at the detuned drive predicted to flip each branch with ≥ 0.95): judged as `flip_final_pi2` (survival, rate, occupancy inversion). Otherwise informational |
 | `drive_off` | `pi2_gain = 0` | Readout/thermal baseline, no parity information | Passes if the lag-covariance ratio's 95% upper bound < 0.1; fails if its 5% lower bound is ≥ 0.1 (inter-shot carryover / readout correlation contaminates the parity record); when the interval straddles 0.1, "inconclusive" (not decisive: acquire more shots), whichever side the point estimate is on. When both records carry the lag statistic but no ratio can be formed (the parity record's own lag sum is not significantly > 0: weak contrast or short record), also "inconclusive". Only when the lag statistic is absent does the ACF amplitude ratio decide, by its point value: < 0.1 passes, ≥ 0.1 fails (no CI, so a noisy record can fail by chance); with neither available, "inconclusive" (not decisive) |
 
 The **lag-covariance ratio** is model-free. For each record, `analyze_modified_ramsey_record`
@@ -377,14 +523,18 @@ echo_null can pass (95 % upper bound < 0.25) only from about 2·10⁶ shots (≈
 262 µs) and a clean drive_off (< 0.1) only from about 10⁷ (≈ 45 min); below that the
 drive_off is "inconclusive" and the echo rests on the HMM's i.i.d. gate. An ACF fit failure
 alone is never counted as null evidence: the ACF is also skipped for non-uniform timing.
-Nor is the HMM's resolved-rate gate ("(γ01 + γ10)·dt > 1"): the echo is fitted with the
-parity record's assumed mapping, so a partially refocused echo (mapping 0.29/0.71
-against 0.1/0.9, lag ratio ≈ 0.3) is mis-modelled, locks onto a fast rate and trips
-that gate although the telegraph survived. Only the i.i.d. gate counts, and it fires
+Nor is the HMM's resolved-rate gate ("(γ01 + γ10)·dt > 1"), nor its emission gate: with a
+fixed mapping (`hmm_fit_mapping=False`) a partially refocused echo (mapping 0.29/0.71
+against 0.1/0.9, lag ratio ≈ 0.3) is mis-modelled, locks onto a fast rate and trips the
+resolved-rate gate although the telegraph survived; with the fitted mapping its reduced
+contrast trips the emission gate instead. Only the i.i.d. gate counts, and it fires
 for every ideal echo null tested (P(e) = 0, 0.03, 0.1, 0.2, 0.5).
 Each control entry in `_control_comparison.json` reports `amplitude_ratio`,
 `lag_cov_ratio`, `lag_cov_ratio_upper95`, `lag_cov_ratio_lower05`, `checked` (True / False / None = not
-decisive), `verdict` and a `note`.
+decisive), `verdict` and a `note`. The comparison also reports `null_control_valid` (False
+when the echo_null was excluded as not a null, True when it was judged, None without
+one), `decisive_controls` (the labels that decided) and `notes`: when the echo is
+excluded, a note names the decisive checks that remain (possibly none).
 
 `all_expected` is True only if all of the following hold:
 
@@ -392,9 +542,54 @@ decisive), `verdict` and a `note`.
 - at least one decisive check ran, and none failed;
 - no requested control was skipped as infeasible.
 
-For a balanced parity record (the symmetric case), the flip control is not decisive, so
-`echo_null` and `drive_off` carry the verdict. A run whose only control is `flip_final_pi2`
-therefore gets `all_expected = False` on a balanced record. The default `validation_controls` list
+For a balanced parity record (the symmetric case), the flip control (and a
+`drive_detuned` judged like it) is not decisive, so `echo_null`, `drive_off` and a
+predicted-null `tau_offset` carry the verdict. An echo excluded as not a null does not
+count: with only flip and echo on a balanced record, no decisive check is left and
+`all_expected` is False; on an imbalanced record the flip alone can make it True, and
+`null_control_valid = False` says the null did not take part. A run whose only control is `flip_final_pi2`
+therefore gets `all_expected = False` on a balanced record.
+
+`tau_offset` and `drive_detuned` are decisive only through their predicted mapping
+(`predict_parity_mapping`, see [the echo null](#echo-is-a-null-only-for-short-pulses)),
+which `build_control_variants` stores in their cfg:
+
+- `tau_offset` gets `mr_predicted_residual_ratio` and `mr_null_control_valid`, with the
+  same 0.2× limit as the echo. In the standard scheme (drive on the upper branch) the
+  default tau is the even harmonic (k+1)/(2·df): there both branches end in the same
+  state to second order, independent of the pulse model (residual 0.01–0.04× at
+  df = 2.7 MHz, σ = 0.04 µs and df = 0.5 MHz, σ = 0.1 µs). In the symmetric scheme the
+  finite pulses lengthen the effective phase time, so the even harmonic keeps 0.1–0.45×
+  (0.26× at df = 2.7 MHz, σ = 0.04 µs, k = 3; 0.44× at σ = 0.1 µs, k = 5: no null on
+  CSTQ03). There the default is the zero of the predicted P(e|upper) − P(e|lower) closest
+  to the even harmonic, solved with the propagator: 1–4.4 % below it (0.7109 µs instead of
+  0.7407 µs at df = 2.7 MHz, σ = 0.04 µs, k = 3; 1.0623 µs instead of 1.1111 µs at
+  σ = 0.1 µs, k = 5), predicted residual < 0.001×. Both are linear zeros in the symmetric
+  scheme, so the solved tau is no less robust: a 1 % df error leaves 0.03–0.10× (the
+  standard even harmonic: 0.03–0.07×). An explicit `control_tau_offset_frac` applies to
+  the programmed tau (not solved for), so it respects k; a 25 % offset at k = 1 keeps
+  about 0.7–0.9× of the contrast and is no null.
+- `drive_detuned` gets `mr_predicted_contrast_ratio` (signed: control / parity run) and
+  `mr_inverted_mapping_expected`, True when the ratio is ≤
+  −`DRIVE_DETUNED_MIN_INVERTED_CONTRAST_RATIO` = −0.8 (the ACF amplitude then keeps
+  ≥ 0.64×, clear of the 0.25 survival threshold). At +df it is ≈ −0.97 for
+  df = 1 MHz, σ = 0.04 µs and df = 0.5 MHz, σ = 0.1 µs. Only bandwidth-starved settings
+  break it: at σ = 0.1 µs, df = 2.7 MHz, k = 5, symmetric, the detuned branches cannot be
+  rotated and the ratio is +0.05, so it is informational. A custom `control_detuning_mhz`
+  adds a common phase 2π·det·tau: odd multiples of π invert, even ones keep the
+  mapping, others lose contrast.
+  With `use_active_reset` the corrective reset pi also plays at the detuned drive, df and
+  2·df from the branches (standard) or 0.5·df and 1.5·df (symmetric), so it can fail and
+  leave inter-shot carryover that changes the rate or occupancy for reasons unrelated to
+  parity. `build_control_variants` then stores `mr_predicted_reset_pi_transfer`
+  (`predict_pi_transfer`: the predicted |e⟩ → |g⟩ probability of the worse branch) and
+  keeps the control decisive only when it is ≥ `DRIVE_DETUNED_MIN_RESET_PI_TRANSFER` =
+  0.95. At +df that needs short pulses: 0.795 (standard) and 0.880 (symmetric) at
+  df = 1 MHz, σ = 0.04 µs, 0.696 at df = 0.5 MHz, σ = 0.1 µs (informational), 0.969 at
+  df = 0.5 MHz, σ = 0.04 µs, symmetric (decisive). The informational verdict carries the
+  reason (`inverted_mapping_reason`) in its note.
+
+Records without these flags (older or hand-built control dicts) are informational for both. The default `validation_controls` list
 does not include `drive_off` yet; add it when the inter-shot reset has to be checked.
 
 The `drive_off` threshold of 0.1 is a contamination budget: at most a tenth of the
@@ -519,14 +714,30 @@ diagnostic (analog SNR 0.91) found incomplete inter-shot reset:
 
 **`hmm_min_emission_snr`: DO NOT lower (CSTQ03 Q2, 2026-08-04).**
 
-- The gate tests `analog_snr × |p1 − p0|` using the **assumed** mapping
-  probabilities. Improving the real mapping (for example with the symmetric scheme)
-  does not move this number until the probabilities are updated from a measurement.
-- At analog SNR ≈ 0.77 the product is ≈ 0.62 < 0.7, so the HMM withholds rates.
+- History (2026-08-04): the mapping was then fixed at the **assumed** (0.1, 0.9), and
+  the gate, the per-sample separation of the two states' g/e mixtures (≈
+  `analog_snr × |p1 − p0|`), came out at ≈ 0.60–0.62 < 0.7 at the measured analog
+  SNR ≈ 0.77, so the HMM withheld rates. That SNR came from the raw moments of the
+  doublet-centre pi pulse at σ = 0.1 µs, df = 2.7 MHz, where about half the "e" shots
+  are predicted to stay in g; a true SNR of 2 then reads ≈ 0.8, so the low readout SNR
+  may be a calibration artifact. The emissions now use the clean clouds (step 1 of the
+  analysis); re-analysing the saved `SingleShot_MRCalib` h5 files of 2026-08 for
+  `prep_fidelity_e` and `snr_analog_clean` would confirm or rule this out (not yet
+  done).
+- Now: the mapping is fitted (`hmm_fit_mapping`, default True) and the gate uses
+  the **fitted** probabilities; the threshold stays 0.7. That is at least as strict
+  as the old gate whenever the **fitted** contrast |p1 − p0| is below 0.8, and more
+  lenient above it: at analog SNR 0.77 a record passes only with a fitted contrast
+  above ≈ 0.92 (symmetric mapping).
 - With the gate lowered to 0.3, the HMM returned a confident-looking 4921 ± 68 Hz,
   while ACF gave 9606 Hz and PSD 15056 Hz (> 3×, auto-flagged). The `echo_null`
-  control, which cannot contain parity contrast, retained 44 % of the parity ACF
-  amplitude.
+  control retained 44 % of the parity ACF amplitude. (This was read at the time as
+  proof that the correlation is not parity, because the echo "cannot contain parity
+  contrast". That premise is wrong at σ = 0.1 µs, df = 2.7 MHz: the finite-pulse echo
+  is predicted to keep 0.77 of the parity ACF amplitude in the symmetric scheme, see
+  [the echo null](#echo-is-a-null-only-for-short-pulses). The echo does not decide
+  the question at these settings; the HMM / ACF / PSD disagreement and the drive_off
+  diagnostic do.)
 - So the fit had locked onto a ~50–200 µs shot-to-shot correlation that is not
   charge parity. 0.7 correctly withheld the number.
 - History: an older code comment advised lowering the gate for oversampled
@@ -546,8 +757,11 @@ diagnostic (analog SNR 0.91) found incomplete inter-shot reset:
   - k = 3: tau = 0.5556 µs, gap 0.156 µs, realised phase 3.0008π, mapping contrast
     1.000. But echo_null needs tau > 8σ = 0.80 µs, so it is skipped, and that forces
     `all_expected = False`.
-  - k = 5: tau = 0.9259 µs, echo gap 0.063 µs, phase 4.997π. This keeps the
-    measurement **and** its decisive null; prefer it.
+  - k = 5: tau = 0.9259 µs, echo gap 0.063 µs, phase 4.997π. The echo is feasible,
+    but at σ = 0.1 µs it is not a null: it keeps 0.641 contrast against the main 0.732
+    (symmetric), so `build_control_variants` marks it "not a null at these settings".
+    The echo becomes a usable null only at shorter σ (σ = 0.04 µs, k = 3: 0.063
+    against 0.960; see [the echo null](#echo-is-a-null-only-for-short-pulses)).
 - **Bandwidth (UNRESOLVED):**
   - The pi/2 Rabi rate is 0.0997/0.1 = 0.997 MHz. The symmetric detuning df/2 =
     1.35 MHz gives a ratio of 1.354 (standard: 2.708). The mapping contrast is
@@ -591,9 +805,10 @@ diagnostic (analog SNR 0.91) found incomplete inter-shot reset:
 - The runner's `f_ge = 3754.5` (the Q2 table centre frequency) sits next to a comment
   "measured TOP branch (bottom = 4184.0)". The two are inconsistent, and `df = 1`,
   k = 1 contradict the df = 2.7 analysis. Values are per-cooldown; set them in the
-  device file.
-- The `tau_offset` control sets tau = 1/(2·df)·(1 + frac). It ignores
-  `tau_harmonic_k`, so with k > 1 it is not "the measured tau + 25 %".
+  device file. The runner pulses `Qubit_Pulse = 5` (2651 MHz), so the doublet centre
+  3754.0 MHz is 1103 MHz off the pulsed qubit and every run prints the
+  [f_ge check](#f_ge-must-sit-on-the-pulsed-qubit) warning. The check is warn-only by
+  default for this reason; set `require_f_ge_near_qubit=True` once f_ge is corrected.
 - The SingleShot separator is calibrated twice at the start (before the loop and
   again at cycle 0).
 - `use_apriori_separator=False` aborts with RuntimeError **after** cycle 0's

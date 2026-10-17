@@ -29,9 +29,9 @@ CASES = {
         _set("ModifiedRamsey_params", reset_read_latency_us=1.0),
         1.0,
     ),
-    # MRC ships with the reset off and reset_readout_relax_delay = 1.0 us. It wires no
-    # readout_threshold, so its program stops at load_reset_threshold (after the cfg,
-    # including this key, has been read): only the cfg is checked for it.
+    # MRC ships with the reset off and reset_readout_relax_delay = 1.0 us. Since F41 its
+    # Ramsey is the modified_ramsey sequence built by build_modified_ramsey_cfg with the
+    # separator-derived readout_threshold, so the reset-ON program compiles like MR's.
     "RunModifiedRamsey_Control[latency]": (
         "RunModifiedRamsey_Control",
         _set(
@@ -68,15 +68,10 @@ def captured(request):
 def test_params_latency_reaches_program_cfg(captured, label):
     latency = CASES[label][2]
     result = captured[label]
-    compiles = label != "RunModifiedRamsey_Control[latency]"
-    if compiles:
-        assert result["outcome"]["status"] in ("completed", "stopped_at_budget"), result["outcome"]
-    else:
-        assert "readout_threshold" in result["outcome"].get("message", ""), result["outcome"]
+    assert result["outcome"]["status"] in ("completed", "stopped_at_budget"), result["outcome"]
     reset_on = [e for e in result["experiments"] if (e.get("cfg") or {}).get("use_active_reset")]
     assert reset_on, "no reset-ON experiment was captured"
     for exp in reset_on:
         assert exp["cfg"]["reset_read_latency_us"] == latency
-        if compiles:
-            assert exp["hw"]["digest"] is not None  # the program compiled with that cfg
+        assert exp["hw"]["digest"] is not None  # the program compiled with that cfg
     assert any("reset_read_latency_us" in a["read"] for a in result["cfg_access"].values())

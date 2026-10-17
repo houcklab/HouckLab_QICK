@@ -6,7 +6,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from qicklab.analysis.iq import kmeans_split, project_iq_signal
+from qicklab.analysis.modified_ramsey import analyze_modified_ramsey_record
 from qicklab.analysis.plotting import iq_separator_geometry, plot_separator, set_iq_limits
+from qicklab.analysis.readout import calibrate_readout_from_record
 from qicklab.analysis.spectroscopy import (
     MIN_PARTNER_SNR,
     choose_two_tone_freqs_from_lorentz_or_peaks,
@@ -20,9 +22,82 @@ from qicklab.hardware.yoko import ramp_to
 from qicklab.runs.charge_sweep import choose_next_voltage
 
 
-def _qcw_rep_period_us(cfg):
-    """Approximate quasi-CW rep period, not program-derived (docs/experiments/charge_dispersion.md)."""
-    return 1.0 + 0.5 + cfg["readout_length"] + 10 + cfg["relax_delay"]
+# KMeans blob gate of the quasi-CW g/e split, as modified_ramsey_control's: below it the
+# record is one blob, every shot is 0 and there is no parity analysis.
+MIN_BLOB_SNR = 2.0
+# Fewer samples than this per expected parity dwell and the record cannot resolve the
+# dwells (docs/experiments/charge_dispersion.md#analysis): warn, never refuse.
+MIN_SAMPLES_PER_DWELL = 10
+
+
+def qcw_parity_analysis(raw_i, raw_q, rep_period_us, blob_snr, params, out_dir, base_name, tag):
+    """Parity analysis of one quasi-CW record (docs/experiments/charge_dispersion.md#analysis).
+
+    The shots are raw accumulator sums with no SingleShot calibration on their scale, so the
+    readout is self-calibrated from the record (calibrate_readout_from_record) and the record
+    goes through analyze_modified_ramsey_record with the mapping P(e | parity) FITTED,
+    seeded at (w_e / 2, 3 w_e / 2) around the record's mean P(e) = w_e, never calibrated.
+    dt is the program's scheduled rep period. Returns a dict (rep_period_us,
+    samples_per_expected_dwell, blob_snr, feasibility_warning, analysed, reason, summary);
+    an analysis error is reported in ``reason``, never raised, so the record is always saved.
+    """
+    expected_dwell_s = params.get("expected_parity_dwell_ms", 2.5) * 1e-3
+    dt_s = rep_period_us * 1e-6
+    out = {
+        "rep_period_us": float(rep_period_us),
+        "samples_per_expected_dwell": float(expected_dwell_s / dt_s),
+        "blob_snr": None if blob_snr is None else float(blob_snr),
+        "feasibility_warning": None,
+        "analysed": False,
+        "reason": None,
+        "summary": None,
+    }
+    if out["samples_per_expected_dwell"] < MIN_SAMPLES_PER_DWELL:
+        out["feasibility_warning"] = (
+            f"{out['samples_per_expected_dwell']:.2f} samples per expected "
+            f"{expected_dwell_s * 1e3:g} ms parity dwell (rep period {rep_period_us:.1f} us) "
+            f"< {MIN_SAMPLES_PER_DWELL}: the record cannot resolve parity dwells; shorten "
+            "relax_delay and use active reset"
+        )
+        print(f"[{tag}] WARNING: {out['feasibility_warning']}")
+    if not (blob_snr is not None and blob_snr >= MIN_BLOB_SNR):
+        out["reason"] = (
+            f"g/e blobs not resolved (KMeans blob SNR {out['blob_snr']} < {MIN_BLOB_SNR}): "
+            "no self-calibration, no parity analysis"
+        )
+        print(f"[{tag}] {out['reason']}")
+        return out
+    try:
+        calibration = calibrate_readout_from_record(raw_i, raw_q)
+        w_e = calibration["w_e"]
+        seed = (max(0.005, 0.5 * w_e), min(0.99, max(0.015, 1.5 * w_e)))
+        result = analyze_modified_ramsey_record(
+            raw_i,
+            raw_q,
+            dt_s,
+            calibration,
+            expected_dwell_s=expected_dwell_s,
+            mapping_probabilities=seed,
+            mapping_probabilities_calibrated=False,
+            fit_mapping=True,
+            mapping_seed_source="self-calibrated: record mean P(e) split 1:3",
+            out_dir=out_dir,
+            base_name=base_name,
+        )
+    except Exception as exc:  # never lose the record to its analysis
+        out["reason"] = f"parity analysis failed: {type(exc).__name__}: {exc}"
+        print(f"[{tag}] {out['reason']}")
+        return out
+    summary = result["summary"]
+    out["analysed"] = True
+    out["summary"] = summary
+    print(
+        f"[{tag}] parity HMM: identifiable={summary['identifiable']}, "
+        f"gamma={summary['gamma01_hz']:.1f} +/- {summary['gamma01_err_hz']:.1f} Hz, "
+        f"fitted P(e|parity)=({summary['mapping_p_e_state0_fit']:.3f}, "
+        f"{summary['mapping_p_e_state1_fit']:.3f}), {len(summary['warnings'])} warnings"
+    )
+    return out
 
 
 def run_two_tone_charge_dispersion_quasicw(
@@ -246,11 +321,24 @@ def run_two_tone_charge_dispersion_quasicw(
         raw_i = np.ravel(np.array(data_qcw["data"]["raw_i"]))
         raw_q = np.ravel(np.array(data_qcw["data"]["raw_q"]))
         iq = np.column_stack([raw_i, raw_q])
-        binary_states, c0, c1, normal, midpoint, scores, _ = kmeans_split(iq)
+        binary_states, c0, c1, normal, midpoint, scores, blob_snr = kmeans_split(
+            iq, min_blob_snr=MIN_BLOB_SNR
+        )
 
-        elapsed_s = np.arange(len(raw_i)) * _qcw_rep_period_us(cfg) * 1e-6
+        rep_period_us = Instance_qcw.prog.scheduled_rep_period_us()
+        elapsed_s = np.arange(len(raw_i)) * rep_period_us * 1e-6
 
         base = os.path.join(save_dir, f"Cycle_{cycle_idx:03d}_QuasiCW_{timestamp()}")
+        parity = qcw_parity_analysis(
+            raw_i,
+            raw_q,
+            rep_period_us,
+            blob_snr,
+            TwoToneChargeDispersion_params,
+            save_dir,
+            os.path.basename(base) + "_parity",
+            "TwoToneChargeDispersion",
+        )
 
         xlim, ylim, I_line, Q_line = iq_separator_geometry(raw_i, raw_q, midpoint, normal)
 
@@ -302,7 +390,7 @@ def run_two_tone_charge_dispersion_quasicw(
         plt.step(elapsed_s, binary_states, where="post", linewidth=1.5)
         plt.plot(elapsed_s, binary_states, "o", markersize=2)
         plt.xlabel("Time since start (s)")
-        plt.ylabel("Assigned state")
+        plt.ylabel("assigned g/e (not parity)")
         plt.yticks([0, 1])
         plt.ylim(-0.1, 1.1)
         plt.title(f"Cycle {cycle_idx + 1}: QuasiCW binary trace")
@@ -326,6 +414,9 @@ def run_two_tone_charge_dispersion_quasicw(
             peak_sep=np.array(chosen_peak_sep),
             cycle_idx=np.array(cycle_idx),
             config=np.array(cfg, dtype=object),
+            rep_period_us=np.array(rep_period_us),
+            blob_snr=np.array(np.nan if blob_snr is None else blob_snr),
+            parity_analysis=np.array(parity, dtype=object),
         )
 
         cycle_summary.append(
@@ -374,14 +465,27 @@ def run_charge_dispersion_quasicw(ctx, ChargeDispersion_params, Spec_relevant_pa
     raw_i = np.ravel(np.array(data_specSlice["data"]["raw_i"]))
     raw_q = np.ravel(np.array(data_specSlice["data"]["raw_q"]))
     iq = np.column_stack([raw_i, raw_q])
-    binary_amps, c0, c1, normal, midpoint, scores, _ = kmeans_split(iq)
+    binary_amps, c0, c1, normal, midpoint, scores, blob_snr = kmeans_split(
+        iq, min_blob_snr=MIN_BLOB_SNR
+    )
 
     amps = np.abs(raw_i + 1j * raw_q) ** 2
-    elapsed_s = np.arange(len(raw_i)) * _qcw_rep_period_us(cfg) * 1e-6
+    rep_period_us = Instance_specSlice.prog.scheduled_rep_period_us()
+    elapsed_s = np.arange(len(raw_i)) * rep_period_us * 1e-6
 
     save_dir = os.path.join(ctx.outerFolder, "ChargeDispersion")
     os.makedirs(save_dir, exist_ok=True)
     base = os.path.join(save_dir, f"ChargeDispersionQuasiCW_{timestamp()}")
+    parity = qcw_parity_analysis(
+        raw_i,
+        raw_q,
+        rep_period_us,
+        blob_snr,
+        ChargeDispersion_params,
+        save_dir,
+        os.path.basename(base) + "_parity",
+        "ChargeDispersionQuasiCW",
+    )
 
     xlim, ylim, I_line, Q_line = iq_separator_geometry(raw_i, raw_q, midpoint, normal)
 
@@ -429,7 +533,7 @@ def run_charge_dispersion_quasicw(ctx, ChargeDispersion_params, Spec_relevant_pa
     plt.figure(figsize=(10, 4))
     plt.plot(elapsed_s, binary_amps, "-", linewidth=1.5)
     plt.xlabel("Time since start (s)")
-    plt.ylabel("Assigned state")
+    plt.ylabel("assigned g/e (not parity)")
     plt.yticks([0, 1])
     plt.ylim(-0.1, 1.1)
     plt.title("ChargeDispersionQuasiCW binary trace")
@@ -451,6 +555,9 @@ def run_charge_dispersion_quasicw(ctx, ChargeDispersion_params, Spec_relevant_pa
         normal=np.array(normal),
         x_pts=np.array(x_pts),
         config=np.array(cfg, dtype=object),
+        rep_period_us=np.array(rep_period_us),
+        blob_snr=np.array(np.nan if blob_snr is None else blob_snr),
+        parity_analysis=np.array(parity, dtype=object),
     )
 
 

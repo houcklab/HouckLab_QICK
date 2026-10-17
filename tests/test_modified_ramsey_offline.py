@@ -120,6 +120,10 @@ def test_calibration():
     assert np.allclose(cal["cov_g"], np.eye(2), atol=0.05) and np.allclose(
         cal["cov_e"], np.eye(2), atol=0.05
     ), "covariances ~ identity"
+    # Ideal prep: no resolvable e-cloud mixture, so the clean clouds are the moments (F38)
+    assert cal["clean_cloud_source"] == "moments" and cal["prep_fidelity_e"] == 1.0
+    assert cal["proj_e_mean_clean"] == cal["proj_e_mean"]
+    assert cal["snr_analog_clean"] == cal["snr_analog"]
 
     # Zero contrast: overlapping clouds must warn.
     Ie0 = rng.normal(0.0, 1.0, n)
@@ -706,8 +710,8 @@ def test_planning_helpers():
     assert by["echo_null"]["cfg"]["use_pi_pulse"] is True, "echo variant sets use_pi_pulse"
     assert (
         by["tau_offset"]["cfg"]["df"] == 0.5
-        and abs(by["tau_offset"]["cfg"]["ramsey_tau_us"] - 1.25) < 1e-12
-    ), "tau_offset changes programmed tau, not physical df"
+        and abs(by["tau_offset"]["cfg"]["ramsey_tau_us"] - 2.0) < 1e-12
+    ), "tau_offset changes programmed tau (default: the even harmonic 2/(2 df)), not physical df"
     assert (
         by["drive_detuned"]["cfg"]["f_ge"] == 3055.2
         and abs(by["drive_detuned"]["cfg"]["ramsey_drive_freq_mhz"] - 3055.7) < 1e-9
@@ -1249,9 +1253,10 @@ def test_control_verdicts_echo_null():
     leaky = _ctl_record(90, _telegraph_prob_e(91, 200.0, 200.0, 0.1, 0.9), "leaky", "echo_null")
     entry, all_expected = _verdict(main, leaky)
     assert entry["checked"] is False and not all_expected, entry["note"]
-    # A partially refocused echo (mapping 0.29/0.71, lag ratio ~0.3): fitted with the
-    # parity mapping, the HMM locks onto a fast rate and reports "switching unresolved".
-    # That gate is not null evidence; the lag statistic (upper bound > 0.25) fails it.
+    # A partially refocused echo (mapping 0.29/0.71, lag ratio ~0.3): with the mapping fixed
+    # at the parity record's, the HMM locked onto a fast rate ("switching unresolved"); with
+    # the fitted mapping (F30) the emission gate withholds it. Neither gate is null evidence;
+    # the lag statistic (upper bound > 0.25) fails it.
     for s in (200, 202):
         partial = _ctl_record(
             s, _telegraph_prob_e(s + 1, 200.0, 200.0, 0.29, 0.71), "partial", "echo_null"

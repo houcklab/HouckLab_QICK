@@ -148,7 +148,7 @@ tone keeps playing otherwise ([cw_tones](experiments/cw_tones.md#stray-tone-haza
 | `charge_dispersion_quasicw` | ChargeDispersionQuasiCW | `ChargeDispersion` | A | spec |
 | `charge_dispersion_ramsey` | ChargeDispersion | `ChargeDispersion` | A | coherence |
 | `modified_ramsey` | ModifiedRamsey, SingleShotProgramFFMUX (calibration) | `ModifiedRamsey`, `ModifiedRamsey_Controls`, `SingleShot_MRCalib` | A | |
-| `modified_ramsey_control` | ModifiedRamsey, QubitSpecSliceFF (sweet-spot search) | `ModifiedRamsey_Control`, `auto-Spec` | A | |
+| `modified_ramsey_control` | ModifiedRamsey, QubitSpecSliceFF (sweet-spot search), SingleShotProgramFFMUX (calibration) | `ModifiedRamsey_Control`, `auto-Spec`, `SingleShot_MRCalib` | A | |
 | `active_reset_verify` | ActiveResetVerify, SingleShotProgramFFMUX | `ActiveResetVerify`, `SingleShot_MRCalib` | A | |
 | `interleaved_coherence` | UndrivenSingleShot, T1FF, T2R, T2EMUX | each step's own | A (swaps to B per step) | coherence, echo, single_shot |
 | `single_shot` | SingleShotProgramFFMUX | `SingleShot` | B | single_shot |

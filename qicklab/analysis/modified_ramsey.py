@@ -333,7 +333,23 @@ def compare_parity_controls(main_result, control_results):
                        not null evidence (a partially refocused echo, fitted
                        with the parity mapping, can lock onto a fast rate),
                        and neither is an ACF fit failure (it also happens for
-                       non-uniform timing).
+                       non-uniform timing). A control dict carrying
+                       null_control_valid=False (build_control_variants: the
+                       predicted echo keeps > 0.2x the parity contrast) is not
+                       decisive: verdict "not a null at these settings".
+      tau_offset     : judged as echo_null when its control dict carries
+                       null_control_valid=True (build_control_variants: its
+                       default tau, the even harmonic (k+1)/(2 df) or in the
+                       symmetric scheme the solved zero just below it, is a
+                       predicted null); otherwise informational.
+      drive_detuned  : +df adds a common phase k*pi: an INVERTED mapping at
+                       about full contrast, not a null. Judged as
+                       flip_final_pi2 when its control dict carries
+                       inverted_mapping_expected=True (predicted contrast <=
+                       -0.8x the parity run's and, with active reset, the
+                       reset pi at the detuned drive predicted to flip each
+                       branch with >= 0.95); otherwise informational, with
+                       its inverted_mapping_reason in the note.
       drive_off      : no pi/2 pulses, so no parity information: its
                        correlation must be < 0.1 of the parity record's.
                        Passes when lag_cov_ratio_upper95 < 0.1; fails when
@@ -348,11 +364,11 @@ def compare_parity_controls(main_result, control_results):
                        amplitude ratio decide, by its point value (< 0.1
                        passes, >= 0.1 fails; no CI, so a noisy record can fail
                        by chance); with neither, "inconclusive".
-      tau_offset / drive_detuned :
-                       reduced contrast expected; reported informationally.
 
-    Returns dict: {"controls": [...], "all_expected": bool}. all_expected
-    needs a valid parity record, at least one decisive check, and no failed one.
+    Returns dict: {"controls": [...], "all_expected": bool, "null_control_valid":
+    False if an echo_null was excluded as not a null else True (None without one),
+    "decisive_controls": [...], "notes": [...]}. all_expected needs a valid parity
+    record, at least one decisive check, and no failed one.
     """
 
     def amp(res):
@@ -370,6 +386,9 @@ def compare_parity_controls(main_result, control_results):
     entries = []
     all_ok = main_valid
     n_decisive_checks = 0
+    decisive = []
+    null_control_valid = None
+    notes = []
     for ctl in control_results:
         ctype = ctl.get("control_type", "unknown")
         c_amp = amp(ctl)
@@ -395,7 +414,9 @@ def compare_parity_controls(main_result, control_results):
             if math.isfinite(lag["upper95"])
             else lag["reason"]
         )
-        if ctype == "flip_final_pi2":
+        if ctype == "flip_final_pi2" or (
+            ctype == "drive_detuned" and ctl.get("inverted_mapping_expected") is True
+        ):
             occ1 = float(ctl.get("occupancy_state1", float("nan")))
             survives = math.isfinite(ratio) and ratio > 0.25
             ctl_hmm = ctl.get("hmm") or {}
@@ -447,7 +468,21 @@ def compare_parity_controls(main_result, control_results):
                     f"{FLIP_MIN_OCCUPANCY_IMBALANCE:g})"
                 )
             )
-        elif ctype == "echo_null":
+        elif ctype == "echo_null" and ctl.get("null_control_valid") is False:
+            # The predicted echo keeps parity contrast: neither a pass nor a failure means
+            # anything (docs/experiments/modified_ramsey.md#echo-is-a-null-only-for-short-pulses).
+            null_control_valid = False
+            entry["verdict"] = "not a null at these settings"
+            entry["note"] = (
+                (ctl.get("null_invalid_reason") or "predicted residual contrast too large")
+                + f"; excluded from the decisive checks ({lag_note}; amplitude ratio "
+                + f"{fmt(ratio)}, informational)"
+            )
+        elif ctype == "echo_null" or (
+            ctype == "tau_offset" and ctl.get("null_control_valid") is True
+        ):
+            if ctype == "echo_null" and null_control_valid is None:
+                null_control_valid = True
             ctl_hmm = ctl.get("hmm") or {}
             hmm_null = not ctl_hmm.get("identifiable", False) and any(
                 _HMM_IID_REASON_KEY in reason
@@ -465,11 +500,17 @@ def compare_parity_controls(main_result, control_results):
             entry["verdict"] = "passed" if ok else "failed"
             entry["note"] = (
                 f"HMM null (i.i.d. gate) {hmm_null}; {lag_note} "
-                f"(expect < {ECHO_NULL_MAX_LAG_COV_RATIO:g}: echo refocuses the static "
-                f"parity detuning)"
+                f"(expect < {ECHO_NULL_MAX_LAG_COV_RATIO:g}: "
+                + (
+                    "echo refocuses the static parity detuning)"
+                    if ctype == "echo_null"
+                    else "predicted-null tau (the even harmonic, or in the symmetric scheme "
+                    "the solved zero just below it) returns both branches to the same state)"
+                )
                 + (
                     f"; 5% lower bound {fmt(lag['lower05'])} >= "
-                    f"{ECHO_NULL_MAX_LAG_COV_RATIO:g}: the telegraph survived the echo"
+                    f"{ECHO_NULL_MAX_LAG_COV_RATIO:g}: the telegraph survived the "
+                    + ("echo" if ctype == "echo_null" else "predicted-null tau")
                     if lag_veto
                     else ""
                 )
@@ -517,13 +558,33 @@ def compare_parity_controls(main_result, control_results):
                     tail = f": no correlation evidence available ({lag['reason']})"
             entry["note"] = f"{measure} (expect < {thr:g})" + tail
         else:
-            entry["note"] = f"amplitude ratio {fmt(ratio)}; {lag_note}"
+            why = ""
+            if ctype == "tau_offset" and ctl.get("null_control_valid") is False:
+                why = (ctl.get("null_invalid_reason") or "not a null at these settings") + "; "
+            elif ctype == "drive_detuned" and ctl.get("inverted_mapping_expected") is False:
+                why = (
+                    ctl.get("inverted_mapping_reason")
+                    or "not predicted to invert the mapping at near-full contrast"
+                ) + "; "
+            entry["note"] = f"{why}amplitude ratio {fmt(ratio)}; {lag_note}"
         if entry["checked"] is not None:
             n_decisive_checks += 1
+            decisive.append(entry["label"])
         if entry["checked"] is False:
             all_ok = False
         entries.append(entry)
-    return {"controls": entries, "all_expected": bool(all_ok and n_decisive_checks > 0)}
+    if null_control_valid is False:
+        notes.append(
+            "echo_null is not a null at these settings and was excluded from the decisive "
+            "checks; remaining decisive checks: " + (", ".join(decisive) or "none")
+        )
+    return {
+        "controls": entries,
+        "all_expected": bool(all_ok and n_decisive_checks > 0),
+        "null_control_valid": null_control_valid,
+        "decisive_controls": decisive,
+        "notes": notes,
+    }
 
 
 def assess_parity_record(
@@ -742,6 +803,39 @@ def _plot_dwells(hmm, out_path):
     plt.close(fig)
 
 
+# clean_cloud_source values whose separation is that of the true g/e clouds: the labelled
+# mixture fit, and the unlabelled record fit (calibrate_readout_from_record)
+TRUE_STATE_SEPARATION_SOURCES = ("mixture", "record_mixture")
+
+
+def true_state_separation(calibration):
+    """(separation, source) of a readout calibration: |mu_e - mu_g| of the TRUE g/e clouds
+    when they are known, else the raw labelled-set separation.
+
+    The raw ``separation`` is the distance between the labelled sets' means; the pi-prepared
+    set is a g/e mixture when the SingleShot pi pulse is imperfect (e.g. detuned from the
+    parity branches at the MR bias), so it is shrunk by the e-cloud purity. When the joint
+    mixture fit is resolved (clean_cloud_source == "mixture") the clean cloud means are the
+    true-state means and their distance is returned; a "record_mixture" calibration's
+    clouds are fitted components, so its separation is returned as is. A trace's lagged
+    covariance divided by this squared is then the lagged covariance of the excited-state
+    indicator, independent of the SingleShot's prep error.
+
+    Otherwise (source "moments": the mixture did not raise the likelihood enough, which is
+    the usual outcome at analog SNR <~ 1.5 even at a purity of 0.7; or "moments_fallback")
+    the raw separation is returned. It is NOT the true-state one: it is still shrunk by the
+    purity p, which is simply not measurable from these shots. A lagged covariance divided
+    by it is then inflated by 1/p^2. Callers that compare biases must not treat it as
+    prep-independent (null_lag_covariance_vs_mr flags it).
+    """
+    source = calibration.get("clean_cloud_source", "moments")
+    if source == "mixture":
+        sep = abs(float(calibration["proj_e_mean_clean"]) - float(calibration["proj_g_mean_clean"]))
+    else:
+        sep = float(calibration.get("separation", float("nan")))
+    return sep, source
+
+
 def _json_default(x):
     if isinstance(x, np.ndarray):
         return x.tolist()
@@ -764,6 +858,9 @@ def analyze_modified_ramsey_record(
     seed=0,
     mapping_probabilities=(0.1, 0.9),
     mapping_probabilities_calibrated=False,
+    fit_mapping=True,
+    mapping_seed_source=None,
+    clean_readout_clouds=None,
     reset_I=None,
     reset_Q=None,
     out_dir=None,
@@ -771,6 +868,7 @@ def analyze_modified_ramsey_record(
     save_plots=True,
     save_sidecars=True,
     hmm_kwargs=None,
+    readout_prep_e_predicted=None,
 ):
     """
     End-to-end offline analysis of one Modified-Ramsey parity record.
@@ -787,15 +885,40 @@ def analyze_modified_ramsey_record(
     expected_dwell_s  : expected parity dwell (2-3 ms on BFC devices).
     symmetric_hmm : fit a single symmetric rate by default (charge parity has
                     no preferred branch); set False for asymmetric rates.
-    mapping_probabilities : assumed P(e|state0), P(e|state1) for the Ramsey
-                    mapping. These must come from a device-specific mapping
-                    calibration; g/e readout fidelity alone is not sufficient.
+    mapping_probabilities : P(e|state0), P(e|state1) for the Ramsey mapping:
+                    the seed of the fit with fit_mapping=True (its order fixes
+                    the neutral labels: state1 is the state seeded with the
+                    larger P(e)), the fixed values otherwise. Fixed values must
+                    come from a device-specific mapping calibration; g/e readout
+                    fidelity alone is not sufficient.
     mapping_probabilities_calibrated : whether that independent calibration was
-                    performed; False adds an explicit quality warning.
+                    performed; False with fit_mapping=False adds an explicit
+                    quality warning.
+    fit_mapping   : fit the two mapping probabilities jointly with the rate(s)
+                    (fit_two_state_hmm fit_mapping, the readout clouds fixed at
+                    the calibration). A wrong fixed mapping biases the rate; the
+                    emission-SNR gate is then evaluated at the fitted mapping.
+                    hmm_kwargs["fit_mapping"] overrides it.
+    mapping_seed_source : where mapping_probabilities came from (e.g.
+                    "predicted", "fallback: <why>", "calibrated"); recorded
+                    as summary["mapping_seed_source"], None if not given.
+    clean_readout_clouds : build the ge_mixture emissions from the calibration's
+                    clean clouds (proj_*_clean: the labelled-shot mixture fit
+                    that removes the g shots of an imperfect pi pulse from the
+                    e cloud) instead of the raw moments. None (default): clean
+                    when the mapping is fitted or calibrated, raw when it is a
+                    fixed assumption (the clean clouds raise the emission SNR
+                    that gates the HMM; an explicit True with an assumed fixed
+                    mapping warns). Recorded as summary["readout_clouds"].
     reset_I/Q     : optional (n_cycles, N) reset readouts for initialization
                     validation.
     out_dir/base_name/save_plots/save_sidecars : output control.
     hmm_kwargs    : extra kwargs forwarded to fit_two_state_hmm.
+    readout_prep_e_predicted : the predicted e purity of the calibration's
+                    pi-prepared set (ideal two-level, the pi's detuning from the
+                    record's branches), or None if unknown. Stored in the
+                    _analysis.json sidecar only, so a later comparison can tell
+                    how much a raw ("moments") readout_separation is shrunk.
 
     Returns dict with sub-results: calibration, drift, hmm, acf, psd,
     rate_vs_bin, reset, assessment, plus scalar summary fields. acf also
@@ -871,21 +994,35 @@ def analyze_modified_ramsey_record(
         raise ValueError(
             "mapping probabilities must differ; identical probabilities carry no parity information"
         )
-    if not mapping_probabilities_calibrated:
+    fit_options = dict(hmm_kwargs or {})
+    fit_options.setdefault("fit_mapping", bool(fit_mapping))
+    if not mapping_probabilities_calibrated and not fit_options["fit_mapping"]:
         drift["warnings"].append(
             "Ramsey mapping probabilities are assumed rather than independently "
             "calibrated; fitted rates are conditional on those assumptions"
         )
+    mapping_trusted = bool(fit_options["fit_mapping"] or mapping_probabilities_calibrated)
+    use_clean = mapping_trusted if clean_readout_clouds is None else bool(clean_readout_clouds)
+    cloud_keys = ("proj_g_mean", "proj_e_mean", "proj_g_sigma", "proj_e_sigma")
+    readout_clouds = (
+        "clean" if use_clean and all(k + "_clean" in calibration for k in cloud_keys) else "raw"
+    )
+    suffix = "_clean" if readout_clouds == "clean" else ""
+    if readout_clouds == "clean" and not mapping_trusted:
+        drift["warnings"].append(
+            "clean readout clouds with an assumed fixed mapping: the emission SNR gate is "
+            "evaluated with the corrected clouds but uncorrected mapping probabilities (the "
+            "Ramsey pulses share the pi pulse's bandwidth loss); fit or calibrate the mapping"
+        )
     emissions = {
         "model": "ge_mixture",
-        "mu_g": calibration["proj_g_mean"],
-        "mu_e": calibration["proj_e_mean"],
-        "sigma_g": calibration["proj_g_sigma"],
-        "sigma_e": calibration["proj_e_sigma"],
+        "mu_g": calibration["proj_g_mean" + suffix],
+        "mu_e": calibration["proj_e_mean" + suffix],
+        "sigma_g": calibration["proj_g_sigma" + suffix],
+        "sigma_e": calibration["proj_e_sigma" + suffix],
         "p_e_state0": p0,
         "p_e_state1": p1,
     }
-    fit_options = dict(hmm_kwargs or {})
     if expected_dwell_s and expected_dwell_s > 0:
         fit_options.setdefault("gamma_init_hz", 1.0 / expected_dwell_s)
     hmm = fit_two_state_hmm(
@@ -978,6 +1115,15 @@ def analyze_modified_ramsey_record(
         "mapping_p_e_state0": p0,
         "mapping_p_e_state1": p1,
         "mapping_probabilities_calibrated": bool(mapping_probabilities_calibrated),
+        "mapping_seed_source": mapping_seed_source,
+        "mapping_fitted": hmm["mapping_fitted"],
+        "mapping_p_e_state0_fit": hmm["p_e_state0_fit"],
+        "mapping_p_e_state1_fit": hmm["p_e_state1_fit"],
+        "mapping_p_e_state0_err": hmm["p_e_state0_err"],
+        "mapping_p_e_state1_err": hmm["p_e_state1_err"],
+        "emission_snr": hmm["emission_snr"],
+        "emission_snr_seed": hmm["emission_snr_seed"],
+        "iid_p_e": hmm["iid_p_e"],
         "identifiable": hmm["identifiable"],
         "gamma01_hz": hmm["gamma01_hz"],
         "gamma10_hz": hmm["gamma10_hz"],
@@ -993,6 +1139,11 @@ def analyze_modified_ramsey_record(
         "readout_contrast": calibration["contrast"],
         "assignment_fidelity": calibration["assignment_fidelity"],
         "snr_analog": calibration["snr_analog"],
+        "readout_clouds": readout_clouds,
+        "snr_analog_clean": calibration.get("snr_analog_clean", float("nan")),
+        "prep_fidelity_e": calibration.get("prep_fidelity_e", float("nan")),
+        "prep_excited_g": calibration.get("prep_excited_g", float("nan")),
+        "clean_cloud_source": calibration.get("clean_cloud_source"),
         "drift_span": drift["drift_span"],
         "drift_safe": drift["safe"],
         "reset_converged": (reset or {}).get("converged"),
@@ -1033,7 +1184,20 @@ def analyze_modified_ramsey_record(
                                 "noise_variance",
                                 "fit_ok",
                             )
+                        }
+                        | {
+                            # lag-1 autocorrelation and the drift-corrected lag-covariance
+                            # sum (with its bootstrap), so a later record (the sweet-spot
+                            # null) can be compared with this one
+                            "r1": float(acf["acf"][1]) if np.size(acf["acf"]) > 1 else float("nan"),
+                            "lag_covariance_sum": acf.get("lag_covariance_sum"),
                         },
+                        # the true-state (clean-cloud) separation and its source, which
+                        # normalises the lag-covariance sum (true_state_separation)
+                        "readout_separation": true_state_separation(calibration)[0],
+                        "readout_separation_source": true_state_separation(calibration)[1],
+                        # how much a raw (non-mixture) readout_separation is shrunk
+                        "readout_prep_e_predicted": readout_prep_e_predicted,
                         "psd": {
                             k: psd[k]
                             for k in ("f_corner_hz", "gamma_hz", "s0", "white_floor", "fit_ok")

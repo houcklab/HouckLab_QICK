@@ -17,6 +17,124 @@ MR_CONTROL_TYPE_CODES = {
     "drive_off": 5,
 }
 
+# echo_null is "not a null at these settings" when its predicted residual contrast exceeds this
+# fraction of the parity run's (docs/experiments/modified_ramsey.md#echo-is-a-null-only-for-short-pulses).
+ECHO_NULL_MAX_PREDICTED_RESIDUAL_RATIO = 0.2
+# drive_detuned is a decisive inverted-mapping check (judged like flip_final_pi2) when its
+# predicted contrast is at most -this times the parity run's (docs/experiments/modified_ramsey.md#analysis).
+DRIVE_DETUNED_MIN_INVERTED_CONTRAST_RATIO = 0.8
+# With use_active_reset, drive_detuned is decisive only when the reset pi, which plays at the
+# detuned drive, is predicted to flip each branch |e> -> |g> with at least this probability;
+# otherwise inter-shot carryover could fail the flip-like checks (docs/experiments/modified_ramsey.md#analysis).
+DRIVE_DETUNED_MIN_RESET_PI_TRANSFER = 0.95
+# The predicted mapping seeds the HMM mapping fit only when its contrast is at least this;
+# below it the two seeds sit too close to separate the states (docs/experiments/modified_ramsey.md#analysis).
+MAPPING_SEED_MIN_PREDICTED_CONTRAST = 0.1
+
+
+def _step_unitaries(om_x, om_y, delta_rad_us, dt_us):
+    """exp(-i dt (om_x X + om_y Y + delta Z) / 2) for each step; shape (n, 2, 2)."""
+    hx, hy, hz = 0.5 * om_x, 0.5 * om_y, 0.5 * delta_rad_us * np.ones_like(om_x)
+    norm = np.sqrt(hx * hx + hy * hy + hz * hz)
+    c = np.cos(norm * dt_us)
+    s = np.where(norm > 0, np.sin(norm * dt_us) / np.where(norm > 0, norm, 1.0), dt_us)
+    u = np.empty((om_x.size, 2, 2), dtype=complex)
+    u[:, 0, 0] = c - 1j * s * hz
+    u[:, 0, 1] = -1j * s * (hx - 1j * hy)
+    u[:, 1, 0] = -1j * s * (hx + 1j * hy)
+    u[:, 1, 1] = c + 1j * s * hz
+    return u
+
+
+def predict_parity_mapping(
+    df_mhz,
+    sigma_us,
+    tau_us,
+    drive_freq_offset_mhz=0.0,
+    use_pi_pulse=False,
+    final_pi2_phase_deg=180.0,
+    pi2_area_rad=np.pi / 2,
+    pi_area_rad=np.pi,
+    n_steps=200,
+):
+    """Predicted P(e|upper), P(e|lower) and contrast of the programmed sequence for an ideal
+    two-level qubit (no T2, no readout error): nominal 4*sigma truncated Gaussians whose
+    on-resonance area is calibrated to pi/2 (the echo pi: pi, phase 0), the branch detuning
+    acting during the pulses and the gaps, pulses centre-to-centre at tau (the pi at tau/2).
+    Piecewise-constant 2x2 propagator, n_steps per pulse
+    (docs/experiments/modified_ramsey.md#echo-is-a-null-only-for-short-pulses)."""
+    pulse_us = 4.0 * float(sigma_us)
+    n_gaps = 2 if use_pi_pulse else 1
+    gap_us = float(tau_us) / n_gaps - pulse_us
+    if gap_us <= 0:
+        raise ValueError(f"tau={tau_us} us leaves no gap between {n_gaps + 1} 4*sigma pulses")
+    dt = pulse_us / n_steps
+    t = (np.arange(n_steps) + 0.5) * dt
+    env = np.exp(-((t - 2.0 * sigma_us) ** 2) / (2.0 * sigma_us**2))
+    env_area = env.sum() * dt
+    pulses = [(pi2_area_rad, 0.0)]
+    if use_pi_pulse:
+        pulses.append((pi_area_rad, 0.0))
+    pulses.append((pi2_area_rad, float(final_pi2_phase_deg)))
+
+    def p_excited(detuning_mhz):
+        # detuning_mhz = f_branch - f_drive
+        delta = 2.0 * np.pi * detuning_mhz
+        free = np.diag([np.exp(-0.5j * delta * gap_us), np.exp(0.5j * delta * gap_us)])
+        u_total = np.eye(2, dtype=complex)
+        for idx, (area, phase_deg) in enumerate(pulses):
+            om = area / env_area * env
+            ph = np.deg2rad(phase_deg)
+            for u_step in _step_unitaries(om * np.cos(ph), om * np.sin(ph), delta, dt):
+                u_total = u_step @ u_total
+            if idx < len(pulses) - 1:
+                u_total = free @ u_total
+        return float(abs(u_total[1, 0]) ** 2)
+
+    offset = float(drive_freq_offset_mhz)
+    p_upper = p_excited(-offset)
+    p_lower = p_excited(-float(df_mhz) - offset)
+    return {"p_e_upper": p_upper, "p_e_lower": p_lower, "contrast": abs(p_upper - p_lower)}
+
+
+def predict_pi_transfer(sigma_us, detuning_mhz, area_rad=np.pi, n_steps=200):
+    """Predicted |e> -> |g> probability of one nominal 4*sigma truncated Gaussian whose
+    on-resonance area is area_rad (the active-reset pi), for an ideal two-level qubit at
+    detuning_mhz = f_qubit - f_drive (same propagator as predict_parity_mapping)."""
+    pulse_us = 4.0 * float(sigma_us)
+    dt = pulse_us / n_steps
+    t = (np.arange(n_steps) + 0.5) * dt
+    env = np.exp(-((t - 2.0 * sigma_us) ** 2) / (2.0 * sigma_us**2))
+    om = area_rad / (env.sum() * dt) * env
+    u_total = np.eye(2, dtype=complex)
+    for u_step in _step_unitaries(om, np.zeros_like(om), 2.0 * np.pi * float(detuning_mhz), dt):
+        u_total = u_step @ u_total
+    return float(abs(u_total[1, 0]) ** 2)
+
+
+def _solve_tau_null(cfg, tau_lo_us, tau_hi_us, tau_guess_us, n_grid=25):
+    """tau in [tau_lo_us, tau_hi_us] where the predicted P(e|upper) - P(e|lower) of cfg
+    crosses zero, the crossing closest to tau_guess_us (brentq); None when there is none."""
+    from scipy.optimize import brentq
+
+    def signed(tau_us):
+        trial = dict(cfg)
+        trial["ramsey_tau_us"] = float(tau_us)
+        pred = _plan_for_cfg(trial)["predicted_mapping"]
+        return pred["p_e_upper"] - pred["p_e_lower"]
+
+    grid = np.linspace(tau_lo_us, tau_hi_us, n_grid)
+    vals = np.array([signed(t) for t in grid])
+    brackets = [
+        (grid[i], grid[i + 1])
+        for i in range(n_grid - 1)
+        if np.sign(vals[i]) != np.sign(vals[i + 1])
+    ]
+    if not brackets:
+        return None
+    lo, hi = min(brackets, key=lambda b: abs(0.5 * (b[0] + b[1]) - tau_guess_us))
+    return float(brentq(signed, lo, hi, xtol=1e-7))
+
 
 def plan_parity_mapping(
     df_mhz,
@@ -74,11 +192,24 @@ def plan_parity_mapping(
     if use_pi_pulse:
         warnings.append(
             "use_pi_pulse=True is a Hahn-echo NULL control: it refocuses the "
-            "static parity detuning and should suppress the parity signal"
+            "static parity detuning only for pulses short against 1/df; "
+            "predicted_mapping gives the contrast it keeps"
         )
 
     base = 90 if symmetric_ramsey else 180
     final_phase = (base + (180 if flip_final_pi2 else 0)) % 360
+    predicted = (
+        predict_parity_mapping(
+            df_mhz,
+            sigma_us,
+            tau_us,
+            drive_freq_offset_mhz=float(drive_freq_offset_mhz),
+            use_pi_pulse=use_pi_pulse,
+            final_pi2_phase_deg=final_phase,
+        )
+        if gap_us > 0
+        else None
+    )
     return {
         "feasible": not errors,
         "errors": errors,
@@ -94,18 +225,50 @@ def plan_parity_mapping(
         "recommend_symmetric": recommend_symmetric,
         "drive_freq_offset_mhz": float(drive_freq_offset_mhz),
         "final_pi2_phase_deg": final_phase,
+        "predicted_mapping": predicted,
     }
+
+
+def _plan_for_cfg(cfg):
+    return plan_parity_mapping(
+        cfg["df"],
+        cfg["sigma"],
+        use_pi_pulse=cfg.get("use_pi_pulse", False),
+        symmetric_ramsey=cfg.get("symmetric_ramsey", False),
+        flip_final_pi2=cfg.get("flip_final_pi2", False),
+        tau_us=cfg.get("ramsey_tau_us"),
+        drive_freq_offset_mhz=(
+            cfg.get("ramsey_drive_freq_mhz") - cfg["f_ge"]
+            if cfg.get("ramsey_drive_freq_mhz") is not None
+            else None
+        ),
+        max_bandwidth_ratio=cfg.get("max_drive_bandwidth_ratio", 1.0),
+    )
 
 
 def build_control_variants(
     base_cfg,
     include=("parity", "flip_final_pi2", "echo_null", "tau_offset", "drive_detuned", "drive_off"),
-    tau_offset_frac=0.25,
+    tau_offset_frac=None,
     detuning_mhz=None,
 ):
     """Copies of base_cfg for the parity run and each control in `include`, each
     pre-checked with plan_parity_mapping; infeasible ones get cfg=None and a
-    skip_reason instead of raising (docs/experiments/modified_ramsey.md#analysis)."""
+    skip_reason instead of raising. Each carries its predicted mapping (also in its cfg).
+    echo_null and tau_offset are nulls: null_control_valid=False when they keep more than
+    ECHO_NULL_MAX_PREDICTED_RESIDUAL_RATIO of the parity run's predicted contrast. The
+    default tau_offset tau is the even harmonic (k+1)/(2 df) of the programmed k/(2 df) when
+    the drive sits on a branch (standard scheme); with any other drive offset (symmetric
+    scheme) it is the predicted zero of the contrast closest to it, which the finite pulses
+    move a few % below it. tau_offset_frac=f gives the programmed tau x (1 + f) instead.
+    drive_detuned (default +df: a common phase k*pi) gets inverted_mapping_expected=True
+    when its predicted contrast is <= -DRIVE_DETUNED_MIN_INVERTED_CONTRAST_RATIO times the
+    parity run's and, with use_active_reset, the reset pi at the detuned drive is predicted
+    to flip each branch with >= DRIVE_DETUNED_MIN_RESET_PI_TRANSFER
+    (docs/experiments/modified_ramsey.md#analysis)."""
+    base_plan = _plan_for_cfg(base_cfg)
+    base_predicted = base_plan["predicted_mapping"]
+    base_tau_us = base_plan["tau_us"]
     out = []
     for name in include:
         if name not in MR_CONTROL_TYPE_CODES:
@@ -113,6 +276,7 @@ def build_control_variants(
         cfg = dict(base_cfg)
         cfg["mr_control_type"] = name
         expected = ""
+        reset_transfer = None
         if name == "parity":
             expected = "telegraph parity signal at tau = 1/(2 df)"
         elif name == "flip_final_pi2":
@@ -122,14 +286,41 @@ def build_control_variants(
             cfg["use_pi_pulse"] = True
             expected = "parity contrast suppressed (echo refocuses df)"
         elif name == "tau_offset":
-            cfg["ramsey_tau_us"] = (
-                1.0 / (2.0 * float(base_cfg["df"])) * (1.0 + float(tau_offset_frac))
-            )
-            cfg["mr_control_tau_offset_frac"] = float(tau_offset_frac)
-            expected = (
-                f"tau deliberately {tau_offset_frac:+.0%} off the pi "
-                "condition; contrast reduced/rotated"
-            )
+            df_mhz = float(base_cfg["df"])
+            if tau_offset_frac is None:
+                # the even harmonic next to the programmed tau = k/(2 df): a phase (k+1)*pi
+                k = max(1, int(round(2.0 * df_mhz * base_tau_us)))
+                tau_even_us = (k + 1) / (2.0 * df_mhz)
+                tau_us = tau_even_us
+                expected = (
+                    f"tau = (k+1)/(2 df) = {tau_us:.4f} us (k = {k}), the even harmonic: "
+                    "both branches end in the same state; parity contrast suppressed"
+                )
+                if abs(base_plan["drive_freq_offset_mhz"]) > 1e-12 and base_plan["feasible"]:
+                    # Drive off both branches (symmetric): the finite pulses lengthen the
+                    # effective phase time, so the predicted null sits below the even
+                    # harmonic; solve for it (a linear zero, like the even harmonic there).
+                    half = 0.5 / (2.0 * df_mhz)
+                    solved = _solve_tau_null(
+                        cfg, tau_even_us - half, tau_even_us + half, tau_even_us
+                    )
+                    if solved is not None:
+                        tau_us = solved
+                        expected = (
+                            f"tau = {tau_us:.4f} us, the predicted zero of the parity contrast "
+                            f"near the even harmonic (k+1)/(2 df) = {tau_even_us:.4f} us "
+                            f"(k = {k}; the finite pulses move it "
+                            f"{tau_us / tau_even_us - 1.0:+.1%}): both branches end in the same "
+                            "state; parity contrast suppressed"
+                        )
+            else:
+                tau_us = base_tau_us * (1.0 + float(tau_offset_frac))
+                expected = (
+                    f"tau deliberately {float(tau_offset_frac):+.0%} off the programmed "
+                    "tau; contrast reduced/rotated"
+                )
+            cfg["ramsey_tau_us"] = tau_us
+            cfg["mr_control_tau_offset_frac"] = tau_us / base_tau_us - 1.0
         elif name == "drive_detuned":
             det = float(detuning_mhz) if detuning_mhz is not None else float(base_cfg["df"])
             base_drive = (
@@ -140,29 +331,100 @@ def build_control_variants(
             cfg["ramsey_drive_freq_mhz"] = base_drive + det
             cfg["max_drive_bandwidth_ratio"] = 1e12
             cfg["mr_control_detuning_mhz"] = det
-            expected = f"drive detuned {det:+.4f} MHz; mapping degraded"
+            if base_cfg.get("use_active_reset", False):
+                # The reset pi plays at the (detuned) drive: branch detunings f_branch - f_drive.
+                upper_det = float(base_cfg["f_ge"]) - cfg["ramsey_drive_freq_mhz"]
+                reset_transfer = min(
+                    predict_pi_transfer(base_cfg["sigma"], upper_det),
+                    predict_pi_transfer(base_cfg["sigma"], upper_det - float(base_cfg["df"])),
+                )
+            expected = (
+                f"drive detuned {det:+.4f} MHz: a common phase "
+                f"{2.0 * det * base_tau_us:.2f} pi (odd: mapping inverted, even: unchanged)"
+            )
         elif name == "drive_off":
             cfg["pi2_gain"] = 0
             expected = "no Ramsey drive; readout baseline only"
 
-        plan = plan_parity_mapping(
-            cfg["df"],
-            cfg["sigma"],
-            use_pi_pulse=cfg.get("use_pi_pulse", False),
-            symmetric_ramsey=cfg.get("symmetric_ramsey", False),
-            flip_final_pi2=cfg.get("flip_final_pi2", False),
-            tau_us=cfg.get("ramsey_tau_us"),
-            drive_freq_offset_mhz=(
-                cfg.get("ramsey_drive_freq_mhz") - cfg["f_ge"]
-                if cfg.get("ramsey_drive_freq_mhz") is not None
-                else None
-            ),
-            max_bandwidth_ratio=cfg.get("max_drive_bandwidth_ratio", 1.0),
-        )
+        plan = _plan_for_cfg(cfg)
+        predicted = plan["predicted_mapping"]
+        if name == "drive_off" and predicted is not None:
+            # pi2_gain = 0: no rotation, both branches stay in |g>.
+            predicted = {"p_e_upper": 0.0, "p_e_lower": 0.0, "contrast": 0.0}
+        null_valid, null_reason, residual_ratio = None, "", float("nan")
+        inverted_expected, inverted_reason, signed_ratio = None, "", float("nan")
+        if (
+            name in ("echo_null", "tau_offset")
+            and predicted is not None
+            and base_predicted is not None
+        ):
+            main_contrast = base_predicted["contrast"]
+            if main_contrast > 0:
+                residual_ratio = predicted["contrast"] / main_contrast
+            else:
+                residual_ratio = float("inf") if predicted["contrast"] > 0 else 0.0
+            null_valid = bool(residual_ratio <= ECHO_NULL_MAX_PREDICTED_RESIDUAL_RATIO)
+            if not null_valid:
+                null_reason = (
+                    f"not a null at these settings: predicted residual contrast "
+                    f"{predicted['contrast']:.3f} is {residual_ratio:.2f}x the parity run's "
+                    f"{main_contrast:.3f} (limit {ECHO_NULL_MAX_PREDICTED_RESIDUAL_RATIO:g}x); "
+                    + (
+                        "the detuned echo pi is itself parity-dependent, shorten sigma"
+                        if name == "echo_null"
+                        else "the finite pulses leave the branches in different states at this tau"
+                    )
+                )
+                expected = "NOT a null at these settings: " + (
+                    "the echo keeps parity contrast"
+                    if name == "echo_null"
+                    else "this tau keeps parity contrast; informational"
+                )
+        if name == "drive_detuned" and predicted is not None and base_predicted is not None:
+            main_signed = base_predicted["p_e_upper"] - base_predicted["p_e_lower"]
+            if main_signed != 0:
+                signed_ratio = (predicted["p_e_upper"] - predicted["p_e_lower"]) / main_signed
+                inverted_expected = bool(signed_ratio <= -DRIVE_DETUNED_MIN_INVERTED_CONTRAST_RATIO)
+                expected += f"; predicted contrast {signed_ratio:+.2f}x the parity run's: " + (
+                    "inverted mapping at near-full contrast (a second flip control): "
+                    "telegraph and rate unchanged, occupancy inverted"
+                    if inverted_expected
+                    else "not a clean inversion; informational"
+                )
+                if not inverted_expected:
+                    inverted_reason = (
+                        f"not predicted to invert the mapping at near-full contrast "
+                        f"(predicted {signed_ratio:+.2f}x the parity run's, limit "
+                        f"-{DRIVE_DETUNED_MIN_INVERTED_CONTRAST_RATIO:g}x)"
+                    )
+                elif (
+                    reset_transfer is not None
+                    and reset_transfer < DRIVE_DETUNED_MIN_RESET_PI_TRANSFER
+                ):
+                    inverted_expected = False
+                    inverted_reason = (
+                        f"the active-reset pi plays at the detuned drive and is predicted to "
+                        f"flip the worse branch with only {reset_transfer:.3f} (limit "
+                        f"{DRIVE_DETUNED_MIN_RESET_PI_TRANSFER:g}): inter-shot carryover could "
+                        "change the rate/occupancy for reasons unrelated to parity"
+                    )
+                    expected += "; but the reset pi is off-resonant, so informational"
         skip = None
         if not plan["feasible"]:
             skip = "; ".join(plan["errors"])
             cfg = None
+        if cfg is not None and predicted is not None:
+            cfg["mr_predicted_p_e_upper"] = predicted["p_e_upper"]
+            cfg["mr_predicted_p_e_lower"] = predicted["p_e_lower"]
+            cfg["mr_predicted_contrast"] = predicted["contrast"]
+            if null_valid is not None:
+                cfg["mr_predicted_residual_ratio"] = residual_ratio
+                cfg["mr_null_control_valid"] = null_valid
+            if inverted_expected is not None:
+                cfg["mr_predicted_contrast_ratio"] = signed_ratio
+                cfg["mr_inverted_mapping_expected"] = inverted_expected
+                if reset_transfer is not None:
+                    cfg["mr_predicted_reset_pi_transfer"] = reset_transfer
         out.append(
             {
                 "label": name,
@@ -171,9 +433,38 @@ def build_control_variants(
                 "skip_reason": skip,
                 "expected": expected,
                 "plan": plan,
+                "predicted_mapping": predicted,
+                "null_control_valid": null_valid,
+                "null_invalid_reason": null_reason,
+                "inverted_mapping_expected": inverted_expected,
+                "inverted_mapping_reason": inverted_reason,
             }
         )
     return out
+
+
+def predicted_mapping_seed(cfg, fallback=(0.1, 0.9)):
+    """(p_e_state0, p_e_state1, source) seeding the HMM mapping fit of a record acquired
+    with cfg: the predicted P(e) of its two branches (plan_parity_mapping) in ascending
+    order, so state1 is the branch with the larger P(e), the label convention of the
+    (0.1, 0.9) default; source "predicted". The fallback (source "fallback: <why>") when
+    the plan is infeasible or raises, or the predicted contrast is below
+    MAPPING_SEED_MIN_PREDICTED_CONTRAST."""
+    try:
+        predicted = _plan_for_cfg(cfg)["predicted_mapping"]
+    except (KeyError, TypeError, ValueError) as exc:
+        return float(fallback[0]), float(fallback[1]), f"fallback: no prediction ({exc})"
+    if predicted is None:
+        return float(fallback[0]), float(fallback[1]), "fallback: infeasible plan"
+    if predicted["contrast"] < MAPPING_SEED_MIN_PREDICTED_CONTRAST:
+        return (
+            float(fallback[0]),
+            float(fallback[1]),
+            f"fallback: predicted contrast {predicted['contrast']:.3f} < "
+            f"{MAPPING_SEED_MIN_PREDICTED_CONTRAST:g}",
+        )
+    lo, hi = sorted((float(predicted["p_e_upper"]), float(predicted["p_e_lower"])))
+    return lo, hi, "predicted"
 
 
 class ModifiedRamseyProgram(ActiveResetMixin, RepPeriodMixin, AveragerProgram):
@@ -220,8 +511,10 @@ class ModifiedRamseyProgram(ActiveResetMixin, RepPeriodMixin, AveragerProgram):
             print(
                 "[ModifiedRamsey] WARNING: use_pi_pulse=True inserts a Hahn "
                 "echo, which refocuses the static parity detuning df. This is "
-                "a NULL/CONTROL sequence -- expect zero parity contrast. Do "
-                "not interpret its output as a parity trace."
+                "a NULL/CONTROL sequence -- it has zero parity contrast only "
+                "for pulses short against 1/df (predict_parity_mapping gives "
+                "the contrast it keeps). Do not interpret its output as a "
+                "parity trace."
             )
 
         # f_ge is the UPPER branch; symmetric drives the midpoint f_ge - df/2.

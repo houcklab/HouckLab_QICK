@@ -276,6 +276,68 @@ def _hmm_nll(log_rates, v, dt_steps, mu0, mu1, sigma0, sigma1, symmetric, emissi
     )
 
 
+# fit_mapping=True: p_e_state0/1 are fitted as logits bounded to +-MAPPING_LOGIT_BOUND
+# (p in [3.4e-4, 1 - 3.4e-4]), seeded at most +-MAPPING_LOGIT_SEED_MAX (p in [2.5e-3, 0.9975]).
+MAPPING_LOGIT_BOUND = 8.0
+MAPPING_LOGIT_SEED_MAX = 6.0
+
+
+def _logit(p):
+    p = min(max(float(p), 1e-12), 1.0 - 1e-12)
+    return math.log(p / (1.0 - p))
+
+
+def _expit(x):
+    return 1.0 / (1.0 + math.exp(-x)) if x >= 0 else math.exp(x) / (1.0 + math.exp(x))
+
+
+def _hmm_nll_mapping(x, v, dt_steps, emission_spec, symmetric):
+    """NLL over (log rate(s), logit p_e_state0, logit p_e_state1); ge_mixture readout fixed."""
+    n_rates = 1 if symmetric else 2
+    g01 = math.exp(x[0])
+    g10 = g01 if symmetric else math.exp(x[1])
+    spec = dict(
+        emission_spec,
+        p_e_state0=_expit(float(x[n_rates])),
+        p_e_state1=_expit(float(x[n_rates + 1])),
+    )
+    return -_forward_loglik(v, dt_steps, g01, g10, 0.0, 1.0, 1.0, 1.0, emission_spec=spec)
+
+
+def _fit_rates_and_mapping(v, dt_steps, emission_spec, symmetric, x0, bounds, map_first=True):
+    """Joint L-BFGS-B fit of the rate(s) and the mapping logits; Powell if it fails.
+
+    map_first: fit the logits at the starting rate(s) first. Started from a wrong
+    mapping, a joint descent follows the bias toward fast rates and can stall on the
+    flat i.i.d. plateau (rate >> 1/dt, where the mapping no longer matters)."""
+    args = (v, dt_steps, emission_spec, symmetric)
+    x0 = np.asarray(x0, dtype=float)
+    n_rates = 1 if symmetric else 2
+    if map_first:
+        stage = optimize.minimize(
+            lambda xm: _hmm_nll_mapping(np.concatenate([x0[:n_rates], xm]), *args),
+            x0[n_rates:],
+            method="L-BFGS-B",
+            bounds=bounds[n_rates:],
+            options={"eps": 1e-6},
+        )
+        if np.all(np.isfinite(stage.x)) and math.isfinite(float(stage.fun)):
+            x0 = np.concatenate([x0[:n_rates], stage.x])
+    opt = optimize.minimize(
+        _hmm_nll_mapping, x0, args=args, method="L-BFGS-B", bounds=bounds, options={"eps": 1e-6}
+    )
+    if not (opt.success and np.all(np.isfinite(opt.x)) and math.isfinite(float(opt.fun))):
+        opt = optimize.minimize(
+            _hmm_nll_mapping,
+            x0,
+            args=args,
+            method="Powell",
+            bounds=bounds,
+            options={"xtol": 1e-7, "ftol": 1e-9},
+        )
+    return opt
+
+
 def _single_gaussian_loglik(v):
     """Log likelihood of the best single-Gaussian (no-switching) model."""
     v = np.asarray(v, dtype=float)
@@ -342,6 +404,7 @@ def fit_two_state_hmm(
     emissions,
     symmetric=False,
     fit_emissions=False,
+    fit_mapping=False,
     rate_bounds_hz=(1e-2, 1e6),
     gamma_init_hz=None,
     n_boot=0,
@@ -371,6 +434,21 @@ def fit_two_state_hmm(
         True fits a single rate gamma (gamma01 = gamma10); False fits both.
     fit_emissions : bool
         Opt-in joint fit of (mu0, mu1, log sigma0, log sigma1) with the rates.
+    fit_mapping : bool
+        ge_mixture only: fit (logit p_e_state0, logit p_e_state1) jointly with
+        the rates, seeded from the supplied p's (logits clipped to
+        +-MAPPING_LOGIT_SEED_MAX, bounded to +-MAPPING_LOGIT_BOUND). mu_g/mu_e
+        and sigma_g/sigma_e stay fixed at the calibration. The label order of
+        the seed is kept: a fit that converges with the p's swapped is relabelled
+        (state0 <-> state1, gamma01 <-> gamma10), so p_e_state1 > p_e_state0
+        whenever the seed has it. The Hessian covers the rates and every logit not
+        at its bound, so the rate errors carry the mapping uncertainty. The
+        emission-SNR gate is evaluated at the FITTED p's (after the fit; the
+        other gates are still evaluated and reported), and the i.i.d. null is the
+        g/e mixture with its own free P(e) (iid_p_e), the i.i.d. limit over every
+        mapping. A wrong fixed mapping biases the rate (a 0.5-contrast record
+        analysed with (0.1, 0.9) reads several times fast); fitting it removes
+        that bias at about 3x the run time.
     rate_bounds_hz : (lo, hi) bounds on each rate.
     gamma_init_hz : float or None; initial rate guess (default: from a simple
         threshold-crossing count, clipped into bounds).
@@ -384,7 +462,8 @@ def fit_two_state_hmm(
         the i.i.d. mixture null with the same emissions and no temporal
         correlation (delta_loglik_iid: is there switching?). The null's
         mixture weight is always free, also for symmetric=True; with
-        fit_emissions=True its emissions are refit too. max_mixing
+        fit_emissions=True its emissions are refit too, with fit_mapping=True
+        its P(e) is free. max_mixing
         bounds (gamma01 + gamma10) * median(dt): above it the chain decorrelates
         between samples and switching is unresolved at this cadence.
 
@@ -421,7 +500,19 @@ def fit_two_state_hmm(
       expected_transitions    : float, posterior-weighted transition count
       occupancy               : (2,) posterior mean occupancy
       dwell_mean_s            : dict per state, from the Viterbi path
-      emissions_used          : emission dict actually used
+      emissions_used          : emission dict actually used (fit_mapping:
+                                the fitted p_e_state0/1)
+      emission_snr            : per-sample separation of the two parity
+                                states' readout distributions, gated by
+                                min_emission_snr (fit_mapping: at the fitted
+                                p's; emission_snr_seed at the seed)
+      mapping_fitted          : bool, fit_mapping was applied
+      p_e_state0_fit, p_e_state1_fit, p_e_state0_err, p_e_state1_err
+                              : fitted mapping and 1-sigma Hessian errors (nan
+                                without fit_mapping; err nan when the logit sits
+                                at its bound and is held fixed)
+      iid_p_e                 : P(e) of the free i.i.d. null (fit_mapping
+                                only, else nan)
       rate_at_bound           : bool
       warnings                : list of str
     """
@@ -457,6 +548,8 @@ def fit_two_state_hmm(
         }
         mu0, mu1 = emission_spec["mu0"], emission_spec["mu1"]
         sigma0, sigma1 = emission_spec["sigma0"], emission_spec["sigma1"]
+        if fit_mapping:
+            raise ValueError("fit_mapping needs the ge_mixture emission model")
     elif emission_model == "ge_mixture":
         if fit_emissions:
             raise ValueError("fit_emissions is invalid for ge_mixture")
@@ -487,7 +580,9 @@ def fit_two_state_hmm(
 
     pooled = math.sqrt(0.5 * (sigma0**2 + sigma1**2))
     emission_snr = _emission_snr(emission_spec)
-    if emission_snr < min_emission_snr:
+    emission_snr_seed = emission_snr
+    # fit_mapping: the gate is evaluated at the fitted p's, after the fit
+    if emission_snr < min_emission_snr and not fit_mapping:
         reasons.append(
             f"emission separation SNR {emission_snr:.2f} < {min_emission_snr}: "
             "the two states are not distinguishable in the analog trace"
@@ -517,6 +612,13 @@ def fit_two_state_hmm(
         "dwell_mean_s": {"state0": float("nan"), "state1": float("nan")},
         "emissions_used": dict(emission_spec),
         "emission_snr": float(emission_snr),
+        "emission_snr_seed": float(emission_snr_seed),
+        "mapping_fitted": bool(fit_mapping),
+        "p_e_state0_fit": float("nan"),
+        "p_e_state1_fit": float("nan"),
+        "p_e_state0_err": float("nan"),
+        "p_e_state1_err": float("nan"),
+        "iid_p_e": float("nan"),
         "symmetric": bool(symmetric),
         "rate_at_bound": False,
         "warnings": warnings,
@@ -569,6 +671,46 @@ def fit_two_state_hmm(
             "emissions were REFIT on the parity record (fit_emissions=True); "
             "drift can be absorbed into the means"
         )
+    elif fit_mapping:
+        n_rates = 1 if symmetric else 2
+        seed_p0, seed_p1 = emission_spec["p_e_state0"], emission_spec["p_e_state1"]
+        x0 = [math.log(g0)] * n_rates + [
+            float(np.clip(_logit(p), -MAPPING_LOGIT_SEED_MAX, MAPPING_LOGIT_SEED_MAX))
+            for p in (seed_p0, seed_p1)
+        ]
+        bounds = [(math.log(lo), math.log(hi))] * n_rates
+        bounds += [(-MAPPING_LOGIT_BOUND, MAPPING_LOGIT_BOUND)] * 2
+        opt = _fit_rates_and_mapping(v, dt_steps, emission_spec, symmetric, x0, bounds)
+        x_fit = np.asarray(opt.x, dtype=float).copy()
+        if (x_fit[n_rates + 1] > x_fit[n_rates]) != (seed_p1 > seed_p0):
+            # neutral labels: keep the seed's order (the swap is an exact symmetry)
+            x_fit[n_rates], x_fit[n_rates + 1] = x_fit[n_rates + 1], x_fit[n_rates]
+            if not symmetric:
+                x_fit[0], x_fit[1] = x_fit[1], x_fit[0]
+            opt.x = x_fit
+        log_rates = x_fit[:n_rates]
+        emission_spec = dict(
+            emission_spec,
+            p_e_state0=_expit(float(x_fit[n_rates])),
+            p_e_state1=_expit(float(x_fit[n_rates + 1])),
+        )
+        result["emissions_used"] = dict(emission_spec)
+        result["p_e_state0_fit"] = emission_spec["p_e_state0"]
+        result["p_e_state1_fit"] = emission_spec["p_e_state1"]
+        emission_snr = _emission_snr(emission_spec)
+        result["emission_snr"] = float(emission_snr)
+        if emission_snr < min_emission_snr:
+            reasons.append(
+                f"emission separation SNR {emission_snr:.2f} < {min_emission_snr} at the "
+                f"fitted mapping p_e = ({emission_spec['p_e_state0']:.3f}, "
+                f"{emission_spec['p_e_state1']:.3f}): the two states are not "
+                "distinguishable in the analog trace"
+            )
+        if n_boot:
+            warnings.append(
+                f"fit_mapping with n_boot={int(n_boot)}: every bootstrap resample refits "
+                "the mapping too (run time ~ n_boot x the joint fit)"
+            )
     else:
         x0 = [math.log(g0)] if symmetric else [math.log(g0), math.log(g0)]
         bounds = [(math.log(lo), math.log(hi))] * len(x0)
@@ -659,6 +801,13 @@ def fit_two_state_hmm(
     loglik_iid, w_iid = _iid_mixture_loglik(le)
     if fit_emissions:
         loglik_iid, w_iid = _iid_gaussian_mixture_refit(v, emission_spec, w_iid, em_bounds)
+    if fit_mapping:
+        # the i.i.d. limit over every mapping: one g/e mixture with its own free P(e)
+        loglik_free, iid_p_e = _iid_mixture_loglik(
+            _log_emissions_from_spec(v, dict(emission_spec, p_e_state0=0.0, p_e_state1=1.0))
+        )
+        loglik_iid = max(loglik_iid, loglik_free)
+        result["iid_p_e"] = float(iid_p_e)
     delta_ll_iid = loglik - loglik_iid
     if delta_ll_iid < min_loglik_gain:
         reasons.append(
@@ -688,17 +837,41 @@ def fit_two_state_hmm(
         )
     result["rate_at_bound"] = bool(at_bound)
 
-    # Hessian errors in log-rate space via central finite differences.
-    def nll_rates(lr):
-        return _hmm_nll(lr, v, dt_steps, mu0, mu1, sigma0, sigma1, symmetric, emission_spec)
+    # Hessian errors in log-rate space via central finite differences. With
+    # fit_mapping the free logits join it, so the rate errors are marginal over
+    # the mapping; a logit at its bound is held fixed.
+    if fit_mapping:
+        x_full = np.asarray(opt.x, dtype=float)
+        free = list(range(len(log_rates)))
+        for i_map, xi in enumerate(x_full[len(log_rates) :]):
+            if abs(xi) < MAPPING_LOGIT_BOUND - 1e-3:
+                free.append(len(log_rates) + i_map)
+            else:
+                warnings.append(
+                    f"fitted p_e_state{i_map} = {_expit(float(xi)):.2e} sits at the logit "
+                    f"bound +-{MAPPING_LOGIT_BOUND:g}; held fixed in the Hessian error"
+                )
 
-    errs = [float("nan")] * len(log_rates)
+        def nll_rates(xf):
+            x = x_full.copy()
+            x[free] = xf
+            return _hmm_nll_mapping(x, v, dt_steps, emission_spec, symmetric)
+
+        x_hess = x_full[free]
+    else:
+
+        def nll_rates(lr):
+            return _hmm_nll(lr, v, dt_steps, mu0, mu1, sigma0, sigma1, symmetric, emission_spec)
+
+        x_hess = np.asarray(log_rates, dtype=float)
+
+    errs = [float("nan")] * len(x_hess)
     if not at_bound:
         try:
             h = 1e-3
-            k = len(log_rates)
+            k = len(x_hess)
             H = np.zeros((k, k))
-            f0 = nll_rates(log_rates)
+            f0 = nll_rates(x_hess)
             for i in range(k):
                 ei = np.zeros(k)
                 ei[i] = h
@@ -706,22 +879,26 @@ def fit_two_state_hmm(
                     ej = np.zeros(k)
                     ej[j] = h
                     if i == j:
-                        H[i, i] = (
-                            nll_rates(log_rates + ei) - 2 * f0 + nll_rates(log_rates - ei)
-                        ) / h**2
+                        H[i, i] = (nll_rates(x_hess + ei) - 2 * f0 + nll_rates(x_hess - ei)) / h**2
                     else:
                         H[i, j] = H[j, i] = (
-                            nll_rates(log_rates + ei + ej)
-                            - nll_rates(log_rates + ei - ej)
-                            - nll_rates(log_rates - ei + ej)
-                            + nll_rates(log_rates - ei - ej)
+                            nll_rates(x_hess + ei + ej)
+                            - nll_rates(x_hess + ei - ej)
+                            - nll_rates(x_hess - ei + ej)
+                            + nll_rates(x_hess - ei - ej)
                         ) / (4 * h**2)
             cov = np.linalg.inv(H)
             diag = np.diag(cov)
             if np.all(diag > 0):
-                errs = list(np.sqrt(diag))  # sigma of log(rate)
+                errs = list(np.sqrt(diag))  # sigma of log(rate) (and of the free logits)
         except (np.linalg.LinAlgError, ValueError):
             warnings.append("Hessian error estimate failed (singular curvature)")
+    if fit_mapping:
+        for pos, idx in enumerate(free[len(log_rates) :], start=len(log_rates)):
+            key = f"p_e_state{idx - len(log_rates)}"
+            p_fit = emission_spec[key]
+            if math.isfinite(errs[pos]):
+                result[key + "_err"] = float(p_fit * (1.0 - p_fit) * errs[pos])
 
     # sigma(log g) -> absolute error via g * sigma_log
     if symmetric:
@@ -768,7 +945,23 @@ def fit_two_state_hmm(
             x0b = [math.log(g01)] if symmetric else [math.log(g01), math.log(g10)]
             boot_args = (sim_v, dt_steps, mu0, mu1, sigma0, sigma1, symmetric, emission_spec)
             boot_bounds = [(math.log(lo), math.log(hi))] * len(x0b)
-            if symmetric:
+            if fit_mapping:
+                # the mapping is refit on every resample, as on the record
+                ob = _fit_rates_and_mapping(
+                    sim_v,
+                    dt_steps,
+                    emission_spec,
+                    symmetric,
+                    list(np.asarray(opt.x, dtype=float)),
+                    boot_bounds + [(-MAPPING_LOGIT_BOUND, MAPPING_LOGIT_BOUND)] * 2,
+                    map_first=False,
+                )
+                nb = len(x0b)
+                if not symmetric and (ob.x[nb + 1] > ob.x[nb]) != (
+                    emission_spec["p_e_state1"] > emission_spec["p_e_state0"]
+                ):
+                    ob.x = np.asarray([ob.x[1], ob.x[0], ob.x[nb + 1], ob.x[nb]])
+            elif symmetric:
                 ob = optimize.minimize_scalar(
                     lambda lr, a=boot_args: _hmm_nll(np.asarray([lr]), *a),
                     bounds=boot_bounds[0],

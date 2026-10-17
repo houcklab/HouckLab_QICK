@@ -5,7 +5,7 @@ from datetime import datetime
 
 import matplotlib.pyplot as plt
 import numpy as np
-from scipy.optimize import curve_fit
+from scipy.optimize import curve_fit, least_squares
 from scipy.signal import find_peaks, savgol_filter
 
 from qicklab.analysis.fitting import estimate_noise_floor, fit_lorentzian_feature, lorentzian_peak
@@ -574,6 +574,300 @@ def analyze_charge_dispersion(avgamp_map, x_pts, voltage_pts, save_base=None, pl
         "f_mean": f_mean,
         "dispersion_pp_MHz": disp_pp,
     }
+
+
+# Fit of the parity-doublet splitting vs charge bias (run_charge_sweep, F40). Conventions:
+# docs/experiments/charge_sweep.md#doublet-splitting-fit. S(V) = cd_max |cos(pi (V - V0) / T_S)|
+# repeats every T_S (the S period); the modified_ramsey_control model writes the same curve as
+# cd_max |cos(2 pi (V - V0) / T)| with T = cd_period_mv = 2 T_S.
+CD_FIT_MIN_PTS_PER_PERIOD = 4  # grid points per S period below which no fit is reported
+
+
+def _projected_trace(data_spec):
+    d = data_spec["data"]
+    x = np.asarray(d["x_pts"], dtype=float)
+    # Projection, not |I + iQ| (docs/concepts/iq_conventions.md section 2).
+    y = project_iq_signal(
+        np.asarray(d["avgi"][0][0], dtype=float), np.asarray(d["avgq"][0][0], dtype=float)
+    )
+    return x, y
+
+
+def refit_doublet_jointly(data_spec, freqs, fit_window_mhz, min_sep_mhz):
+    """Joint two-Lorentzian refit of a selected parity doublet; its centres give the splitting.
+
+    QubitSpecSliceFF.display fits each line alone in a window clipped to half the bin-peak
+    separation and ignores the other line's tail, which pulls both centres inward: the selected
+    separation reads low (about 0.8 x at 2 HWHM, 0.88 x at 2.5 HWHM, 0.95 x at 3.4 HWHM). This
+    refits both lines together (_fit_doublet: shared offset, window grown to
+    GAIN_SWEEP_WINDOW_FWHM x the wider FWHM, capped at the half-span), seeded at ``freqs``
+    (the two selected frequencies) with heights over the edge baseline (spectrum_noise_floor).
+    Returns {"centers": [lo, hi], "hwhm": [g_lo, g_hi]} [MHz], or None when the fit fails,
+    has R^2 < 0.6, or moves a centre by more than half of max(min_sep_mhz, its HWHM).
+    docs/experiments/charge_sweep.md#doublet-splitting-fit
+    """
+    x, y = _projected_trace(data_spec)
+    seeds = np.sort(np.asarray(freqs, dtype=float).ravel())
+    if seeds.size != 2 or x.size < 8:
+        return None
+    baseline, sigma = spectrum_noise_floor(y)
+    heights = [max(y[int(np.argmin(np.abs(x - f)))] - baseline, sigma) for f in seeds]
+    res = _fit_doublet(
+        x, y - baseline, seeds, heights, fit_window_mhz, 0.5 * np.ptp(x), min_sep_mhz
+    )
+    if res is None:
+        return None
+    fits = res[0]
+    return {
+        "centers": np.array([fits[0]["center"], fits[1]["center"]]),
+        "hwhm": np.array([fits[0]["gamma"], fits[1]["gamma"]]),
+    }
+
+
+# single_line_splitting_bound: level as a fraction of the smoothed peak, boxcar width [bins],
+# and the smallest level, in noise sigmas of the smoothed trace, at which a bound is trusted
+SPLIT_BOUND_LEVEL_FRAC = 0.25
+SPLIT_BOUND_SMOOTH_BINS = 5
+SPLIT_BOUND_MIN_LEVEL_SIGMA = 3.0
+
+
+def single_line_splitting_bound(data_spec, min_sep_mhz, min_snr=MIN_PARTNER_SNR):
+    """Upper bound [MHz] on a parity splitting hidden in a slice that shows one line.
+
+    max(min_sep_mhz, W). W is the extent of the projected trace above a quarter of its peak:
+    the trace minus the edge baseline (spectrum_noise_floor) is smoothed with a
+    SPLIT_BOUND_SMOOTH_BINS boxcar, and W runs from the first to the last bin at or above
+    SPLIT_BOUND_LEVEL_FRAC x the smoothed maximum, gaps included, so neither the dip between
+    two lines nor a noisy flank bin ends it. Noise-free, each line's centre stands at least as
+    high as that line alone, so both centres lie inside W (d <= W) whenever the weaker line is
+    at least a quarter of the trace's peak; that peak is at most 1 + r times the stronger line
+    (r the height ratio), so r >= 1/3 suffices, before smoothing and before the wings lift the
+    edge baseline. With noise, through the real display on a 2 MHz span (HWHM 0.04-0.3 MHz,
+    d 0-1.2 MHz, about 200-300 unresolved slices per case) no bound fell below d for r = 1,
+    0.6 and 0.5 at SNR 8 and 20 or for r = 1 at SNR 6; 1 did at r = 0.4 (SNR 8), and at
+    r = 0.3 broad lines far apart are not bounded
+    (docs/experiments/charge_sweep.md#doublet-splitting-fit). The previous bound, the
+    half-maximum width of the contiguous run around the tallest bin, was not one: the dip
+    before the weaker line, a noisy flank bin or a noise-raised tallest bin ends the run
+    inside a doublet 2-4 HWHM wide. The display's own Lorentzian widths are not used either: with two seeds the
+    window is clipped to half their separation and the surviving fit is narrower than the
+    splitting. W is looser than the FWHM (sqrt(3) x it for one line), which only weakens the
+    censored constraint. NaN (no bound: the slice is dropped from the fit, not censored) when
+    the tallest bin is less than ``min_snr`` noise sigmas above the baseline or the level is
+    below SPLIT_BOUND_MIN_LEVEL_SIGMA sigmas of the smoothed trace, where noise bins could
+    cross it or hide a centre below it.
+    """
+    x, y = _projected_trace(data_spec)
+    if x.size < 3:
+        return np.nan
+    baseline, sigma = spectrum_noise_floor(y)
+    if not (sigma > 0 and np.max(y) - baseline >= min_snr * sigma):
+        return np.nan
+    m = min(SPLIT_BOUND_SMOOTH_BINS, x.size if x.size % 2 else x.size - 1)
+    padded = np.pad(y - baseline, m // 2, mode="edge")
+    smooth = np.convolve(padded, np.ones(m) / m, mode="valid")
+    level = SPLIT_BOUND_LEVEL_FRAC * float(np.max(smooth))
+    if level < SPLIT_BOUND_MIN_LEVEL_SIGMA * sigma / np.sqrt(m):
+        return np.nan
+    above = np.flatnonzero(smooth >= level)
+    return max(float(min_sep_mhz), float(x[above[-1]] - x[above[0]]))
+
+
+def _cd_result(status, message, **extra):
+    out = {
+        "status": status,
+        "message": message,
+        "cd_max_mhz": np.nan,
+        "cd_max_err_mhz": np.nan,
+        "s_period_mv": np.nan,
+        "s_period_err_mv": np.nan,
+        "cd_period_mv": np.nan,
+        "cd_period_err_mv": np.nan,
+        "v0_mv": np.nan,
+        "v0_err_mv": np.nan,
+    }
+    out.update(extra)
+    return out
+
+
+def _cd_model(v_mv, cd_max, v0, t_s):
+    return np.abs(cd_max) * np.abs(np.cos(np.pi * (v_mv - v0) / t_s))
+
+
+def fit_charge_dispersion_splitting(
+    voltage_v,
+    sep_mhz,
+    censored_below_mhz=0.0,
+    cd_period_mv=None,
+    min_pts_per_period=CD_FIT_MIN_PTS_PER_PERIOD,
+    exclude=None,
+):
+    """Fit sep(V) = cd_max |cos(pi (V - V0) / T_S)| to the doublet splitting of a charge sweep.
+
+    voltage_v: bias of each slice [V]. sep_mhz: splitting [MHz], NaN where the slice showed one
+    line (doublet unresolved): those points are censored, sep < censored_below_mhz, and enter
+    the fit as one-sided constraints, never as sep = 0. censored_below_mhz is the resolution
+    [MHz], a scalar or one value per slice (run_charge_sweep: single_line_splitting_bound);
+    a censored slice whose level is NaN has no known bound and is dropped like `exclude`.
+    cd_period_mv: the model period T of modified_ramsey_control (T_S = T/2), if known.
+    exclude: optional mask of slices that carry no splitting information (a single line whose
+    partner failed the significance gate); they are dropped but still define the grid step.
+
+    Returns a dict: status ('ok', 'undersampled', 'insufficient_coverage', 'too_few_points',
+    'fit_failed'), message, and only for 'ok' cd_max_mhz, s_period_mv (T_S), cd_period_mv
+    (2 T_S, the MRC convention), v0_mv (a maximum of S, the one in [V_min, V_min + T_S)) with
+    1-sigma errors (covariance scaled by the residual variance of the resolved points); always
+    step_mv, span_mv, n_resolved, n_censored, pts_per_s_period, periods_covered. A known
+    period refuses grids coarser than T_S / min_pts_per_period (the fit would return an
+    alias); without one the scan only looks at periods of at least min_pts_per_period steps,
+    so a true period shorter than that is aliased and cannot be detected from the data.
+    """
+    v_mv = 1e3 * np.asarray(voltage_v, dtype=float).ravel()
+    sep = np.asarray(sep_mhz, dtype=float).ravel()
+    used = np.ones(sep.shape, bool) if exclude is None else ~np.asarray(exclude, bool).ravel()
+    level = 0.0 if censored_below_mhz is None else censored_below_mhz
+    limit = np.broadcast_to(np.asarray(level, dtype=float), sep.shape).ravel()
+    used &= np.isfinite(sep) | np.isfinite(limit)  # a censored point needs a bound
+    resolved = np.isfinite(sep) & used
+    step = float(np.median(np.abs(np.diff(v_mv)))) if v_mv.size > 1 else np.nan
+    span = float(np.ptp(v_mv)) if v_mv.size else 0.0
+    info = {
+        "step_mv": step,
+        "span_mv": span,
+        "n_resolved": int(resolved.sum()),
+        "n_censored": int((~np.isfinite(sep) & used).sum()),
+        "pts_per_s_period": np.nan,
+        "periods_covered": np.nan,
+    }
+
+    if cd_period_mv is not None and np.isfinite(step) and step > 0:
+        t_s_prior = float(cd_period_mv) / 2.0
+        info["pts_per_s_period"] = t_s_prior / step
+        info["periods_covered"] = span / t_s_prior
+        if step > t_s_prior / min_pts_per_period:
+            return _cd_result(
+                "undersampled",
+                f"step {step:.4g} mV gives {t_s_prior / step:.2f} points per S period "
+                f"T_S = cd_period_mv/2 = {t_s_prior:.4g} mV (need >= {min_pts_per_period}): "
+                "the splitting is aliased, no fit",
+                **info,
+            )
+    if resolved.sum() < 5 or not np.isfinite(step) or step <= 0:
+        return _cd_result(
+            "too_few_points",
+            f"{int(resolved.sum())} resolved doublets (need >= 5 for cd_max, V0, T_S)",
+            **info,
+        )
+    t_min = min_pts_per_period * step
+    t_max = 2.0 * span
+    if t_max <= t_min:
+        return _cd_result("insufficient_coverage", "the grid is too short to fit a period", **info)
+
+    # seed: sep^2 = cd_max^2/2 (1 + cos(2 pi (V - V0)/T_S)) is a sinusoid in V; scan 1/T_S
+    vu = v_mv[used]
+    y2 = np.where(resolved, sep, 0.5 * limit)[used] ** 2
+    best = None
+    for f in np.linspace(1.0 / t_max, 1.0 / t_min, 2000):
+        a = np.column_stack(
+            [np.ones_like(vu), np.cos(2 * np.pi * f * vu), np.sin(2 * np.pi * f * vu)]
+        )
+        coef, *_ = np.linalg.lstsq(a, y2, rcond=None)
+        rss = float(np.sum((a @ coef - y2) ** 2))
+        if best is None or rss < best[0]:
+            best = (rss, f, coef)
+    _, f_seed, (c0, c1, s1) = best
+    t_s_seed = 1.0 / f_seed
+    v0_seed = t_s_seed * np.arctan2(s1, c1) / (2 * np.pi)
+    cd_seed = np.sqrt(max(c0 + np.hypot(c1, s1), 1e-12))
+
+    sep0 = np.where(resolved, sep, 0.0)
+
+    def resid(p):
+        m = _cd_model(v_mv, *p)
+        # censored: penalise only a model above the resolution (one-sided); excluded: 0
+        return np.where(resolved, m - sep0, np.where(used, np.maximum(0.0, m - limit), 0.0))
+
+    try:
+        res = least_squares(
+            resid,
+            [cd_seed, v0_seed, t_s_seed],
+            bounds=([0.0, -np.inf, t_min / 2.0], [np.inf, np.inf, np.inf]),
+        )
+        active = resolved | (res.fun > 0)  # resolved points and violated censored ones
+        jac = res.jac[active]
+        dof = int(active.sum()) - 3
+        s2 = float(np.sum(res.fun[active] ** 2)) / dof
+        cov = np.linalg.inv(jac.T @ jac) * s2
+        err = np.sqrt(np.clip(np.diag(cov), 0.0, np.inf))
+    except (ValueError, np.linalg.LinAlgError, ZeroDivisionError) as exc:
+        return _cd_result("fit_failed", f"fit failed: {exc}", **info)
+
+    cd_max, v0, t_s = float(abs(res.x[0])), float(res.x[1]), float(res.x[2])
+    v0 = float(v_mv.min() + np.mod(v0 - v_mv.min(), t_s))
+    info["pts_per_s_period"] = t_s / step
+    info["periods_covered"] = span / t_s
+    if t_s / step < min_pts_per_period:
+        return _cd_result(
+            "undersampled", f"fitted T_S = {t_s:.4g} mV is only {t_s / step:.2f} steps", **info
+        )
+    if span < t_s:
+        return _cd_result(
+            "insufficient_coverage",
+            f"the grid spans {span:.4g} mV, less than one fitted S period ({t_s:.4g} mV)",
+            **info,
+        )
+    out = _cd_result("ok", "", **info)
+    out.update(
+        cd_max_mhz=cd_max,
+        cd_max_err_mhz=float(err[0]),
+        v0_mv=v0,
+        v0_err_mv=float(err[1]),
+        s_period_mv=t_s,
+        s_period_err_mv=float(err[2]),
+        cd_period_mv=2.0 * t_s,
+        cd_period_err_mv=2.0 * float(err[2]),
+    )
+    if cd_period_mv is None:
+        out["message"] = (
+            "period from the data alone: valid only if the true S period is longer than "
+            f"{min_pts_per_period} steps ({t_min:.4g} mV); a shorter one aliases"
+        )
+    return out
+
+
+def fit_doublet_mean(voltage_v, f_mean_mhz):
+    """Straight-line fit f_mean(V) = f0 + slope (V - V_c) over the resolved doublets.
+
+    V_c is the mean bias of those points. Returns f0_mhz, slope_mhz_per_mv with 1-sigma errors
+    (covariance scaled by the residual variance; NaN with fewer than 3 points). The parity
+    branches sit symmetrically about f_mean, so a slope is drift of the line, not dispersion.
+    """
+    v_mv = 1e3 * np.asarray(voltage_v, dtype=float).ravel()
+    f = np.asarray(f_mean_mhz, dtype=float).ravel()
+    ok = np.isfinite(f) & np.isfinite(v_mv)
+    out = {
+        "f0_mhz": np.nan,
+        "f0_err_mhz": np.nan,
+        "slope_mhz_per_mv": np.nan,
+        "slope_err_mhz_per_mv": np.nan,
+        "v_center_mv": np.nan,
+    }
+    if ok.sum() < 3 or np.ptp(v_mv[ok]) == 0:
+        return out
+    vc = float(np.mean(v_mv[ok]))
+    x = v_mv[ok] - vc
+    a = np.column_stack([np.ones_like(x), x])
+    coef, *_ = np.linalg.lstsq(a, f[ok], rcond=None)
+    s2 = float(np.sum((a @ coef - f[ok]) ** 2)) / (ok.sum() - 2)
+    err = np.sqrt(np.diag(np.linalg.inv(a.T @ a)) * s2)
+    out.update(
+        f0_mhz=float(coef[0]),
+        f0_err_mhz=float(err[0]),
+        slope_mhz_per_mv=float(coef[1]),
+        slope_err_mhz_per_mv=float(err[1]),
+        v_center_mv=vc,
+    )
+    return out
 
 
 def pick_parity_drive_freq(

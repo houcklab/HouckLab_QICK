@@ -236,9 +236,14 @@ MR variant that drives at `f_ge - df/2`, midway between the branches, halving ea
 detuning; closing phase 90 deg instead of 180.
 
 ### Echo null, flip_final_pi2, drive_off, drive_detuned, tau_offset
-MR validation controls: echo must suppress the telegraph, a flipped final pi/2 must keep the rate
+MR validation controls: echo (when a valid null for the pulse length, `mr_null_control_valid`)
+must suppress the telegraph, a flipped final pi/2 must keep the rate
 and invert the mapping (decisive only for an imbalanced occupancy), drive_off must show < 0.1 of
-the parity correlation; tau_offset and drive_detuned are informational.
+the parity correlation. tau_offset defaults to the predicted null next to the programmed tau (the
+even harmonic (k+1)/(2 df), or in the symmetric scheme the solved zero a few % below it), judged
+like the echo when predicted to be one; drive_detuned (+df) inverts the mapping at about full
+contrast and is judged like the flip when predicted to (with active reset, only when the reset pi
+still works at the detuned drive); otherwise both are informational.
 
 ### Telegraph, dwell
 A two-level random signal; a dwell is one stay in a state. Rates are `1/mean dwell`.
@@ -249,8 +254,9 @@ continuous IQ, the autocorrelation decay (`tau_corr = 1/(2 gamma)`), and the Lor
 the power spectrum (`f_c = gamma/pi`).
 
 ### Mapping probabilities
-`P(e | parity state 0)`, `P(e | parity state 1)` used by the HMM; defaults (0.1, 0.9) are assumed
-until measured.
+`P(e | parity state 0)`, `P(e | parity state 1)` used by the HMM. Fitted with the rate by default
+(`hmm_fit_mapping`), seeded from the predicted mapping of the sequence; with the fit off they are
+fixed, and the defaults (0.1, 0.9) are assumed until measured.
 
 ### Quasi-CW
 Two-tone at a fixed qubit frequency with the pulse-measure loop in hardware, returning every shot

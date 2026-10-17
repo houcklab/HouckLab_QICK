@@ -801,9 +801,14 @@ def _run_charge_dispersion(monkeypatch, tmp_path, spectra, gate_off=False):
         def acquire(self):
             return queue.pop(0)
 
+    class _FakeQcwProg:
+        # F72: the run reads the program's scheduled rep period after acquire()
+        def scheduled_rep_period_us(self):
+            return 300.0
+
     class FakeQcw:
         def __init__(self, **kwargs):
-            pass
+            self.prog = _FakeQcwProg()
 
         def acquire(self, **kwargs):
             rng = np.random.default_rng(0)

@@ -16,8 +16,12 @@ Code: see `qicklab.experiments.charge_dispersion` and `qicklab.runs.charge_dispe
 
 - **Quasi-CW.** A pulse-then-measure loop runs in hardware (`reps` iterations in one
   acquire) at a single qubit frequency. The program returns the rep-resolved raw IQ,
-  `(reps, expts)`. A KMeans split into two blobs gives a binary trace vs
-  (approximate) time.
+  `(reps, expts)`. Each shot is a g/e readout whose P(e) depends on the parity (the
+  drive is resonant with one branch), so the record is a parity-modulated g/e sequence,
+  not a parity trace. The parity rate comes from the same HMM analysis as
+  [modified_ramsey](modified_ramsey.md#analysis), with the readout self-calibrated from the
+  record and the mapping P(e | parity) fitted. A gated KMeans split into two blobs gives the
+  per-shot g/e assignment vs time, as a diagnostic.
 - **Ramsey.** A single-point Ramsey whose wait is set from `df`, the splitting of the
   two parity branches. It reports the averaged I/Q/amplitude of that one point. The
   aim is a charge-parity-sensitive readout, but see the 1/df caveat below.
@@ -79,7 +83,8 @@ PLAN = [R.charge_dispersion_ramsey(df=..., repetitions=...)]   # see Known issue
      ≥ 0) and `voltage_max`, and stop when the step stalls or after
      `max_voltage_tries`.
 4. If a probe was found, run the quasi-CW record (`qcw_repetitions`,
-   `qcw_relax_delay`) at it and split the shots with KMeans.
+   `qcw_relax_delay`) at it, split the shots with the gated KMeans and run the parity
+   analysis (see Analysis).
 
 The voltage and search direction carry over to the next cycle.
 
@@ -94,6 +99,7 @@ The voltage and search direction carry over to the next cycle.
 | `repetitions` | 500 | count | Quasi-CW hardware reps. |
 | `df` | — (missing) | MHz | Ramsey: branch splitting, sets wait = 1/df. Absent in the runner dict. |
 | `upper_freq` / `lower_freq` | 2306.567327 / 2306.032673 | MHz | Documentation only; read nowhere. |
+| `expected_parity_dwell_ms` | 2.5 (absent: default) | ms | Expected parity dwell of the quasi-CW parity analysis (HMM rate seed, lag window, feasibility warning). |
 
 Quasi-CW drive, from the session spec group (`Spec_relevant_params`):
 
@@ -117,6 +123,7 @@ Quasi-CW drive, from the session spec group (`Spec_relevant_params`):
 | `Gauss` / `sigma` / `gain` / `qubit_length` | True / 2 / 500 / 2 | – / µs / DAC / µs | Search drive. |
 | `qcw_repetitions` | 1000 | count | Quasi-CW reps once a doublet is found. |
 | `qcw_relax_delay` | 850 | µs | Quasi-CW relax. |
+| `expected_parity_dwell_ms` | 2.5 (absent: default) | ms | As in `ChargeDispersion_params`, for the quasi-CW record of this step. |
 
 The charge_dispersion_ramsey loop count is the coherence group's `repetitions` (1000
 in the CSTQ03 runner), not a key of its own.
@@ -127,19 +134,25 @@ in the CSTQ03 runner), not a key of its own.
   - In `<outer>/ChargeDispersion/ChargeDispersionQuasiCW_<ts>`:
     `_iq_blobs_labeled.png`, `_separator_score_hist.png`, `_binary.png`,
     `.npz` (`elapsed_s`, `raw_i`, `raw_q`, `amps` = |I+iQ|², `scores`,
-    `binary_amps`, `centers`, `midpoint`, `normal`, `x_pts`, `config`), and
-    `_config.json`.
-  - **No h5** is written. The experiment's `save_data` is not called; the raw data
-    lives only in the npz.
+    `binary_amps`, `centers`, `midpoint`, `normal`, `x_pts`, `config`, `rep_period_us`,
+    `blob_snr`, `parity_analysis`), and `_config.json`.
+  - When the parity analysis runs: `<name>_parity_analysis.json`,
+    `<name>_parity_analysis.h5` (written only if h5py is importable) and the
+    `_calibration`, `_projected_trace`, `_hmm`, `_acf_psd`, `_rate_vs_bin`, `_dwells` PNGs
+    of analyze_modified_ramsey_record (prefix `<name>_parity`).
+  - **No raw-data h5** is written. The experiment's `save_data` is not called; the raw
+    data lives only in the npz. The only h5 is the parity-analysis sidecar above.
   - The first plot (IQ + separator) is shown but never saved.
 - **two_tone_charge_dispersion_quasicw:**
   - Every spectroscopy attempt is saved by `QubitSpecSliceFF` (path
     `TwoToneChargeDispersion`), with a two-tone plot and `<base>_summary.txt`.
   - Per successful cycle: `Cycle_<nnn>_QuasiCW_<ts>` with `_iq_separator.png`,
-    `_iq_labeled.png`, `_amplitude_vs_time.png`, `_binary.png`, `.npz`,
-    `_config.json`.
+    `_iq_labeled.png`, `_amplitude_vs_time.png`, `_binary.png`, `.npz` (also
+    `rep_period_us`, `blob_snr`, `parity_analysis`), `_config.json`, and the
+    `_parity_*` analysis files as above.
   - One `CycleSummary_<ts>.json` per run.
-  - No h5 for the quasi-CW record.
+  - No raw-data h5 for the quasi-CW record; the only h5 is the
+    `<name>_parity_analysis.h5` sidecar.
 - **charge_dispersion_ramsey:** per repetition, a `ChargeDispersion/` h5 (`avgi`,
   `avgq`, `amp`), `<name>_ChargeDispersion.png` and json.
 
@@ -151,18 +164,48 @@ in the CSTQ03 runner), not a key of its own.
   per hardware shot.
 - `raw_i`/`raw_q` are **raw accumulator sums**: not divided by the window length, no
   offset removal. They are not in the normalised units of single_shot.
-- **Split.**
+- **Split (diagnostic g/e assignment).**
   1. KMeans(2) on raw IQ, scored against the perpendicular bisector of the two
      centroids.
   2. Relabel so state 1 is the **less** populated blob.
-  3. There is **no** blob-separation gate (contrast with
-     [modified_ramsey_control](modified_ramsey_control.md#analysis)). KMeans always
-     returns two clusters, so a single blob is split ~50/50 by noise.
-- **Time axis.** `rep = 1.0 + 0.5 + readout_length + 10 + relax_delay` µs. This is an
-  approximation, not derived from the program. It omits the qubit pulse length (8 µs
-  for a σ = 2 µs Gaussian; 50 µs for the CSTQ03 flat spec drive with `Gauss` False),
-  so the axis runs short: about 0.4 % (8 µs pulse, 2000 µs relax) up to about 5 % (50 µs pulse, the
-  850 µs `qcw_relax_delay`).
+  3. Blob gate `MIN_BLOB_SNR` = 2.0 (centroid distance / pooled within-cluster RMS, as
+     [modified_ramsey_control](modified_ramsey_control.md#analysis)): below it the
+     record is one blob, every shot is 0 (`binary_states` / `binary_amps` all zero) and
+     the parity analysis is skipped. `blob_snr` is saved.
+  4. The `_binary.png` y-axis reads "assigned g/e (not parity)": the assignment is a
+     per-shot readout result. Parity only sets P(e) of each shot, and P(e) ≤ 0.5 under a
+     saturating drive, so this trace cannot show parity dwells by eye.
+- **Time axis.** dt is the program's scheduled rep period
+  (`ChargeDispersionQuasiCWProg.scheduled_rep_period_us()`, the sum of the loop's
+  `synci` advances: 1 µs + drive + 0.5 µs, the readout tone + 10 µs, `relax_delay`).
+  A 50 µs const drive with 850 µs relax gives 926.81 µs (398599 tProc cycles, pinned in
+  `tests/test_program_timing.py`). The CSTQ03 runs give 2076.80 µs
+  (`charge_dispersion_quasicw`: 50 µs drive, 2000 µs relax) and 878.80 µs (the two-tone
+  path: the search's 2 µs drive leaks into the record, 850 µs relax). Until 2026-10 the
+  runner used `1.0 + 0.5 + readout_length + 10 + relax_delay` µs, which omitted the drive
+  (2 to 50 µs short, up to about 5 %).
+- **Parity analysis** (`qcw_parity_analysis`, when the blob gate passes):
+  1. Readout self-calibrated from the record (`calibrate_readout_from_record`): a
+     two-Gaussian mixture of the shots themselves, the more populated cloud taken as g.
+     The shots are raw accumulator sums, so a SingleShot calibration in normalised units
+     does not apply, and no calibration acquisition is added. The mixture weight `w_e`
+     is the record's mean P(e).
+  2. `analyze_modified_ramsey_record` on the projected record with dt above, the
+     expected dwell `expected_parity_dwell_ms`, and the mapping P(e | parity) **fitted**
+     with the rate (seeded at (w_e/2, 3 w_e/2), whose mean is w_e;
+     `mapping_probabilities_calibrated` False). No on-resonance value is assumed: the
+     two-tone path's drive is not necessarily saturating. The emission-SNR gate and
+     every other gate of that analysis apply unchanged.
+  3. Feasibility: when the expected dwell holds fewer than `MIN_SAMPLES_PER_DWELL` = 10
+     samples a warning is printed and saved (`parity_analysis["feasibility_warning"]`):
+     shorten `relax_delay` and use active reset. Synthetic records give a usable rate at
+     25 samples per dwell, an error of tens of % at 2.7 and often no identifiable fit at
+     1.2. Both CSTQ03 quasi-CW configurations warn (2.8 samples per dwell in the two-tone
+     path, 1.2 in `charge_dispersion_quasicw`).
+  4. The result dict (`rep_period_us`, `samples_per_expected_dwell`, `blob_snr`,
+     `feasibility_warning`, `analysed`, `reason`, `summary`) is saved as the npz key
+     `parity_analysis`. An analysis error is recorded in `reason`, never raised, so the
+     record is always written.
 - **Ramsey.** Single averaged point; no fit.
 
 ## Findings & notes

@@ -541,6 +541,11 @@ ADC_END_WAITI = {"A": 6580, "B": 6580}
 SPEC_DRIVE = {"A": 21504, "B": 30720}
 # ConstantTone, length 15.3 us, generator cycles. Was 6580 on both boards.
 CONSTANT_TONE = {"A": 6580, "B": 9400}
+# ChargeDispersionQuasiCW scheduled rep period [tProc cycles] at relax_delay 850 us (the CSTQ03
+# qcw_relax_delay), 50 us const drive: synci 22149 (1 + 50 + 0.5 us) + tone 6581 (A) / 6580 (B)
+# + 10 us syncdelay (4301) + 850 us relax (365568). The record's dt (F72); before it the runner
+# used 1 + 0.5 + readout_length + 10 + relax_delay us, 50.3 us short.
+QCW_PERIOD = {"A": 398599, "B": 398598}
 
 
 def _program(name, soccfg, **overrides):
@@ -591,6 +596,17 @@ def test_const_spec_drive_on_generator_clock(board, name):
     cycles = prog._gen_mgrs[qubit_ch].next_pulse["length"]
     assert cycles == SPEC_DRIVE[variant]
     assert cycles / soccfg["gens"][qubit_ch]["f_fabric"] == pytest.approx(50.0, abs=1e-3)
+
+
+def test_quasi_cw_rep_period(board):
+    variant, soccfg = board
+    prog = _program("ChargeDispersionQuasiCW", soccfg, relax_delay=850, expts=1, step=0)
+    assert prog.scheduled_rep_period_cycles() == QCW_PERIOD[variant]
+    assert [w[0] for w in _insts(prog, "synci")] == [
+        22149,
+        QCW_PERIOD[variant] - 22149 - 365568,
+        365568,
+    ]
 
 
 def test_constant_tone_on_generator_clock(board):

@@ -1509,7 +1509,9 @@ def test_threshold_stability():
     # Default threshold_list: the 30-70th score percentiles. It runs and returns finite
     # per-threshold MLEs, but it is not a telegraph-vs-noise discriminator (see docstring).
     ts_def = threshold_stability(clean_scores, t)
-    np.testing.assert_allclose(ts_def["threshold_list"], np.percentile(clean_scores, [30, 40, 50, 60, 70]))
+    np.testing.assert_allclose(
+        ts_def["threshold_list"], np.percentile(clean_scores, [30, 40, 50, 60, 70])
+    )
     assert len(ts_def["tau0_per_threshold"]) == len(ts_def["tau1_per_threshold"]) == 5
     assert np.all(np.isfinite(ts_def["tau0_per_threshold"] + ts_def["tau1_per_threshold"]))
     assert np.isfinite(ts_def["tau_cv"])

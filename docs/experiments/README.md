@@ -68,7 +68,7 @@ consecutive steps differ in regime. Details in
 | interleaved_coherence | `UndrivenSingleShot`, `T1FF`, `T2R`, `T2EMUX` | A, swaps to B per sub-step | Long unattended loop: undriven single shot, T1, T2R, T2E | [interleaved_coherence.md](interleaved_coherence.md) |
 | two_tone_charge_dispersion_quasicw | `QubitSpecSliceFF`, `ChargeDispersionQuasiCW` | A | Find the parity doublet, then stream shots at it | [charge_dispersion.md](charge_dispersion.md) |
 | modified_ramsey | `ModifiedRamsey` | A | Fixed-tau charge-parity Ramsey record + HMM | [modified_ramsey.md](modified_ramsey.md) |
-| modified_ramsey_control | `ModifiedRamsey`, `QubitSpecSliceFF` | A | Sweet-spot control for modified_ramsey | [modified_ramsey_control.md](modified_ramsey_control.md) |
+| modified_ramsey_control | `ModifiedRamsey`, `QubitSpecSliceFF`, `SingleShotProgramFFMUX` | A | Sweet-spot control for modified_ramsey | [modified_ramsey_control.md](modified_ramsey_control.md) |
 | charge_dispersion_quasicw | `ChargeDispersionQuasiCW` | A | Shot-resolved two-tone at a fixed qubit frequency | [charge_dispersion.md](charge_dispersion.md) |
 | charge_dispersion_ramsey | `ChargeDispersion` | A | Fixed-wait Ramsey parity readout | [charge_dispersion.md](charge_dispersion.md) |
 | charge_sweep | `QubitSpecSliceFF` | A | Two-tone spec vs charge bias | [charge_sweep.md](charge_sweep.md) |

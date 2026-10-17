@@ -117,7 +117,10 @@ Path `SingleShot/` (or `SingleShot_MRCalib/` for separator calibrations).
     not on the rotated I; `t1_ss` and active reset use `threshold`/`angle`).
     `readout_gate_pass<r>` = 1 when none of the parity-analysis readout gates trips
     (analog SNR < 1, contrast < 0.3, fewer than 500 shots in a class), else 0; each
-    tripped gate is printed as a WARNING. All of these are NaN when the calibration
+    tripped gate is printed as a WARNING. The calibration's e-cloud warnings (purity
+    of the pi-prepared shots < 0.9, mixture fallback; see
+    [modified_ramsey](modified_ramsey.md#analysis)) are printed too but do not fail the
+    gate. All of these are NaN when the calibration
     raises (fewer than 10 shots per class, coincident centres).
   Not in thermal mode (no labelled e cloud).
 - **h5, thermal mode:** `i_thermal<r>`, `q_thermal<r>`, the population fit

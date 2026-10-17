@@ -1,5 +1,6 @@
 """Single-shot readout analysis: g/e empirical-CDF contrast (hist_process), labelled g/e
-overlap error (labelled_overlap_error), labelled-shot calibration and IQ-trace projection.
+overlap error (labelled_overlap_error), labelled-shot calibration, an unlabelled record's
+self-calibration (calibrate_readout_from_record) and IQ-trace projection.
 Conventions and the meaning of "fidelity": docs/concepts/iq_conventions.md."""
 
 import math
@@ -15,6 +16,13 @@ from qicklab.analysis.iq import rotate_data
 # labelled_overlap_error keeps the minority (prep-error) components only when they raise the
 # joint log-likelihood by at least this much (2 Delta lnL) over the same fit with w_g = w_e = 0.
 _MIXTURE_MIN_2DLNL = 9.0
+# The e-cloud mixture of calibrate_readout_from_labeled_shots
+# (docs/experiments/modified_ramsey.md#analysis): sigma_e / sigma_g bound, the e-set weight
+# below which (or a clean SNR below 1) it falls back to the raw moments, and the e-cloud
+# purity below which it warns.
+_CLOUD_SIGMA_RATIO_BOUNDS = (0.8, 1.25)
+_CLOUD_MIN_E_PURITY = 0.2
+_CLOUD_WARN_E_PURITY = 0.9
 
 
 def labelled_overlap_error(i_g, q_g, i_e, q_e):
@@ -223,6 +231,95 @@ def hist_process(
     return fid, threshold, theta
 
 
+def _labelled_cloud_mixture(vg, ve, max_iter=300, tol=1e-8):
+    """Joint 1-D two-Gaussian mixture of the projected labelled shots (EM, deterministic).
+
+    Both sets share the components N(mu_g, s_g) and N(mu_e, s_e), with s_e / s_g held in
+    _CLOUD_SIGMA_RATIO_BOUNDS; each set has its own e weight: w_g in [0, 0.5] for the g shots
+    (thermal |e>), w_e in [0.02, 1] for the e shots (e-cloud purity). Seeds: the g-set moments,
+    mu_e at the mean of the e shots above the raw-mean midpoint, w_e from the raw mean ratio
+    (mean_e - mu_g) / (mu_e - mu_g), w_g = 0.01. Returns (params dict, log-likelihood) of the
+    mixture and the log-likelihood of the pure fit (w_g = 0, w_e = 1) with each set's own
+    unconstrained moments (the fallback clouds; its sigma ratio is NOT bounded); NaN values
+    when either set has no finite positive variance (noise-free or non-finite shots)."""
+    lo, hi = _CLOUD_SIGMA_RATIO_BOUNDS
+    if not (float(np.var(vg)) > 0 and float(np.var(ve)) > 0):
+        nan_params = dict.fromkeys(("mu_g", "mu_e", "s_g", "s_e", "w_g", "w_e"), np.nan)
+        return nan_params, np.nan, np.nan
+    log_norm = 0.5 * math.log(2 * math.pi)
+
+    def logpdf(v, mu, s):
+        return -0.5 * ((v - mu) / s) ** 2 - math.log(s) - log_norm
+
+    def m_sigmas(n_g, ss_g, n_e, ss_e):
+        # ML sigmas under lo <= s_e / s_g <= hi (concave in log s: clip, then refit s_g)
+        var_g, var_e = ss_g / n_g, ss_e / n_e
+        if not (var_g > 0 and var_e > 0):
+            return math.sqrt(max(var_g, 0.0)), math.sqrt(max(var_e, 0.0))  # ends the EM
+        ratio = math.sqrt(var_e / var_g)
+        if lo <= ratio <= hi:
+            return math.sqrt(var_g), math.sqrt(var_e)
+        ratio = min(max(ratio, lo), hi)
+        s_g = math.sqrt((ss_g + ss_e / ratio**2) / (n_g + n_e))
+        return s_g, ratio * s_g
+
+    # pure fit: every g shot in g, every e shot in e, with the UNCLIPPED per-set ML moments,
+    # i.e. exactly the clouds the caller falls back to. A pure cloud whose sigma ratio lies
+    # outside the bounds must not count as a mixture just because the bounded pure fit is worse.
+    mu_g0, mu_e0 = float(vg.mean()), float(ve.mean())
+    s_g0, s_e0 = float(vg.std()), float(ve.std())
+    ll_pure = float(logpdf(vg, mu_g0, s_g0).sum() + logpdf(ve, mu_e0, s_e0).sum())
+
+    mu_g, s_g = mu_g0, float(vg.std())
+    upper = ve[ve > 0.5 * (mu_g0 + mu_e0)]
+    mu_e = float(upper.mean()) if upper.size else mu_e0
+    s_e = s_g
+    w_g = 0.01
+    w_e = min(max((mu_e0 - mu_g) / (mu_e - mu_g), 0.02), 0.98) if mu_e > mu_g else 0.5
+
+    def e_step(mu_g, mu_e, s_g, s_e, w_g, w_e):
+        resp, total = [], 0.0
+        for v, w in ((vg, w_g), (ve, w_e)):
+            a = math.log1p(-w) + logpdf(v, mu_g, s_g) if w < 1 else np.full(v.size, -np.inf)
+            b = math.log(w) + logpdf(v, mu_e, s_e) if w > 0 else np.full(v.size, -np.inf)
+            tot = np.logaddexp(a, b)
+            total += float(tot.sum())
+            resp.append(np.exp(b - tot))
+        return resp, total
+
+    ll = -np.inf
+    for _ in range(max_iter):
+        if not (s_g > 0 and s_e > 0 and math.isfinite(mu_g) and math.isfinite(mu_e)):
+            break
+        resp, ll_new = e_step(mu_g, mu_e, s_g, s_e, w_g, w_e)
+        r_all = np.concatenate(resp)
+        v_all = np.concatenate([vg, ve])
+        n_e = float(r_all.sum())
+        n_g = float(r_all.size - n_e)
+        if n_e <= 1.0 or n_g <= 1.0:
+            break
+        mu_g = float(((1.0 - r_all) * v_all).sum() / n_g)
+        mu_e = float((r_all * v_all).sum() / n_e)
+        s_g, s_e = m_sigmas(
+            n_g,
+            float(((1.0 - r_all) * (v_all - mu_g) ** 2).sum()),
+            n_e,
+            float((r_all * (v_all - mu_e) ** 2).sum()),
+        )
+        w_g = min(max(float(resp[0].mean()), 0.0), 0.5)
+        w_e = min(max(float(resp[1].mean()), 0.02), 1.0)
+        converged = abs(ll_new - ll) < tol * r_all.size
+        ll = ll_new
+        if converged:
+            break
+    params = {"mu_g": mu_g, "mu_e": mu_e, "s_g": s_g, "s_e": s_e, "w_g": w_g, "w_e": w_e}
+    if all(math.isfinite(x) for x in params.values()) and s_g > 0 and s_e > 0:
+        ll = e_step(mu_g, mu_e, s_g, s_e, w_g, w_e)[1]  # at the returned parameters
+    else:
+        ll = np.nan
+    return params, ll, ll_pure
+
+
 def calibrate_readout_from_labeled_shots(I_g, Q_g, I_e, Q_e, use_lda=True):
     """
     Calibrate the IQ projection and discrimination stats from LABELED shots.
@@ -262,7 +359,32 @@ def calibrate_readout_from_labeled_shots(I_g, Q_g, I_e, Q_e, use_lda=True):
       e_above_threshold      : bool, True if the |e> cloud projects ABOVE the
                                threshold (orientation of the mapping)
       n_g, n_e               : shot counts used
-      warnings               : list of str
+      proj_g_mean_clean, proj_e_mean_clean, proj_g_sigma_clean, proj_e_sigma_clean :
+                               the clouds of a joint two-Gaussian mixture fit of
+                               both projected labelled sets (shared component
+                               means and sigmas, sigma_e / sigma_g in
+                               [0.8, 1.25], a separate e weight per set), used
+                               only when it raises the joint log-likelihood by
+                               2 Delta lnL >= 9 over the pure fit (each set's
+                               own raw moments, sigma ratio unbounded);
+                               otherwise the raw moments above
+      snr_analog_clean       : snr_analog of the clean clouds
+      prep_fidelity_e        : e weight of the e shots, the e-CLOUD PURITY
+                               (pi-pulse prep error plus decay during readout,
+                               which the MR readout shares); 1.0 when no
+                               mixture is resolved, NaN on a fallback
+      prep_excited_g         : e weight of the g shots (thermal |e> etc.)
+      clean_cloud_source     : "mixture", "moments" (not significant, or not
+                               computable: a set without positive variance) or
+                               "moments_fallback" (e weight < 0.2 or clean
+                               SNR < 1; warns)
+      mixture_2dlnl          : 2 Delta lnL of the mixture over the pure fit
+                               (can be negative: the pure fit's sigmas are free)
+      readout_gate_warnings  : the readout gates (SNR < 1, contrast < 0.3,
+                               < 500 shots per class)
+      warnings               : list of str: the readout gates, then the
+                               e-cloud warnings (purity < 0.9, fallback)
+    docs/experiments/modified_ramsey.md#analysis.
     """
     I_g = np.ravel(np.asarray(I_g, dtype=float))
     Q_g = np.ravel(np.asarray(Q_g, dtype=float))
@@ -349,6 +471,40 @@ def calibrate_readout_from_labeled_shots(I_g, Q_g, I_e, Q_e, use_lda=True):
             f"only {n_min} labeled shots in the smaller class; threshold and "
             "confusion-matrix estimates are coarse"
         )
+    readout_gate_warnings = list(warnings)
+
+    # Clean clouds: the e shots of a detuned or bandwidth-limited pi pulse are a g/e mixture
+    # (plus decay during readout), which biases proj_e_mean toward g, inflates proj_e_sigma
+    # and understates snr_analog. A joint mixture fit of both labelled sets separates them.
+    mix, ll_mix, ll_pure = _labelled_cloud_mixture(vg, ve)
+    mixture_2dlnl = 2.0 * (ll_mix - ll_pure)
+    clean = (proj_g_mean, proj_e_mean, proj_g_sigma, proj_e_sigma)
+    prep_fidelity_e, prep_excited_g = 1.0, 0.0
+    if not mixture_2dlnl >= _MIXTURE_MIN_2DLNL:  # not significant, or not computable (NaN)
+        clean_source = "moments"  # no resolvable mixture: the clean clouds are the moments
+    else:
+        sep_mix = mix["mu_e"] - mix["mu_g"]
+        snr_mix = sep_mix / math.sqrt(0.5 * (mix["s_g"] ** 2 + mix["s_e"] ** 2))
+        if not (mix["w_e"] >= _CLOUD_MIN_E_PURITY and snr_mix >= 1.0):
+            clean_source = "moments_fallback"
+            prep_fidelity_e = prep_excited_g = np.nan
+            warnings.append(
+                f"e-cloud mixture fit unresolved (e weight {mix['w_e']:.2f}, clean SNR "
+                f"{snr_mix:.2f}): the clean clouds fall back to the raw moments"
+            )
+        else:
+            clean_source = "mixture"
+            clean = (mix["mu_g"], mix["mu_e"], mix["s_g"], mix["s_e"])
+            prep_fidelity_e, prep_excited_g = mix["w_e"], mix["w_g"]
+    pooled_clean = math.sqrt(0.5 * (clean[2] ** 2 + clean[3] ** 2))
+    snr_analog_clean = abs(clean[1] - clean[0]) / pooled_clean if pooled_clean > 0 else np.inf
+    if prep_fidelity_e < _CLOUD_WARN_E_PURITY:
+        warnings.append(
+            f"e-cloud purity {prep_fidelity_e:.2f} < {_CLOUD_WARN_E_PURITY}: the pi-prepared shots "
+            "are a g/e mixture (pi-pulse infidelity, e.g. detuned from the parity branches, plus "
+            f"decay during readout); clean analog SNR {snr_analog_clean:.2f} vs raw "
+            f"{snr_analog:.2f}"
+        )
 
     return {
         "g_center": g_center,
@@ -372,6 +528,16 @@ def calibrate_readout_from_labeled_shots(I_g, Q_g, I_e, Q_e, use_lda=True):
         "n_g": int(I_g.size),
         "n_e": int(I_e.size),
         "use_lda": bool(use_lda),
+        "proj_g_mean_clean": float(clean[0]),
+        "proj_e_mean_clean": float(clean[1]),
+        "proj_g_sigma_clean": float(clean[2]),
+        "proj_e_sigma_clean": float(clean[3]),
+        "snr_analog_clean": float(snr_analog_clean),
+        "prep_fidelity_e": float(prep_fidelity_e),
+        "prep_excited_g": float(prep_excited_g),
+        "clean_cloud_source": clean_source,
+        "mixture_2dlnl": float(mixture_2dlnl),
+        "readout_gate_warnings": readout_gate_warnings,
         "warnings": warnings,
     }
 
@@ -403,8 +569,9 @@ def single_shot_figures_of_merit(i_g, q_g, i_e, q_e, contrast, threshold, angle)
     helper run_t1_ss uses, so both agree bit for bit) and assignment_fidelity =
     1 - (P_e_given_g + P_g_given_e)/2 = (1 + contrast)/2. snr_analog, cal_* and
     readout_gate_pass come from calibrate_readout_from_labeled_shots (mean/LDA axis, its own
-    threshold relative to cal_midpoint); gate pass = none of its warnings (SNR < 1, contrast
-    < 0.3, fewer than 500 shots in a class), the gates the parity analysis uses. Those are NaN
+    threshold relative to cal_midpoint); gate pass = none of its readout-gate warnings (SNR < 1,
+    contrast < 0.3, fewer than 500 shots in a class), the gates the parity analysis uses; its
+    e-cloud purity warnings are returned with them but do not fail the gate. Those are NaN
     when it raises (fewer than 10 shots per class, coincident centres). Returns
     (dict key -> value, list of warnings). docs/experiments/single_shot.md#outputs."""
     i_g, q_g, i_e, q_e = (np.ravel(np.asarray(x, dtype=float)) for x in (i_g, q_g, i_e, q_e))
@@ -441,7 +608,7 @@ def single_shot_figures_of_merit(i_g, q_g, i_e, q_e, contrast, threshold, angle)
             cal_threshold=cal["threshold"],
             cal_axis=cal["axis"],
             cal_midpoint=cal["midpoint"],
-            readout_gate_pass=float(not warnings),
+            readout_gate_pass=float(not cal["readout_gate_warnings"]),
         )
     return fom, warnings
 
@@ -458,6 +625,114 @@ def project_iq_trace(I, Q, calibration):
     axis = np.asarray(calibration["axis"], dtype=float)
     midpoint = np.asarray(calibration["midpoint"], dtype=float)
     return (np.column_stack([I, Q]) - midpoint) @ axis
+
+
+def calibrate_readout_from_record(I, Q, random_state=0):
+    """Readout calibration from an UNLABELLED record: a two-component Gaussian mixture of
+    the record's own shots, for a record taken without a SingleShot calibration on its
+    scale (the quasi-CW raw accumulator sums, docs/experiments/charge_dispersion.md#analysis).
+
+    The more populated component is called g, so the record's mean P(e) is ``w_e`` <= 0.5.
+    Returns the calibrate_readout_from_labeled_shots keys that project_iq_trace and
+    analyze_modified_ramsey_record use (LDA axis g -> e, midpoint, projected cloud moments,
+    separation, snr_analog, the equal-priors threshold / contrast / confusion matrix of the
+    two fitted Gaussians), plus ``w_e`` and ``clean_cloud_source`` = "record_mixture".
+    There are no labelled clouds, so no "_clean" keys: the fitted components are the clouds.
+    """
+    from sklearn.mixture import GaussianMixture  # third-party; local like kmeans_split's
+
+    I = np.ravel(np.asarray(I, dtype=float))
+    Q = np.ravel(np.asarray(Q, dtype=float))
+    if I.size != Q.size:
+        raise ValueError("I and Q must have the same length")
+    pts = np.column_stack([I, Q])
+    pts = pts[np.all(np.isfinite(pts), axis=1)]
+    if pts.shape[0] < 10:
+        raise ValueError(f"need >= 10 finite shots to self-calibrate, got {pts.shape[0]}")
+
+    gm = GaussianMixture(
+        n_components=2, covariance_type="full", random_state=random_state, n_init=5
+    ).fit(pts)
+    g_idx = int(np.argmax(gm.weights_))
+    e_idx = 1 - g_idx
+    g_center, e_center = gm.means_[g_idx], gm.means_[e_idx]
+    cov_g, cov_e = gm.covariances_[g_idx], gm.covariances_[e_idx]
+    w_e = float(gm.weights_[e_idx])
+
+    diff = e_center - g_center
+    if not np.any(np.abs(diff) > 0):
+        raise ValueError("the two mixture components coincide; cannot define an axis")
+    pooled = 0.5 * (cov_g + cov_e)
+    eps = 1e-12 * max(np.trace(pooled), 1e-300)
+    axis = np.linalg.solve(pooled + eps * np.eye(2), diff)
+    axis = axis / np.linalg.norm(axis)
+    if float(axis @ diff) < 0:
+        axis = -axis
+    midpoint = 0.5 * (g_center + e_center)
+
+    proj_g_mean = float((g_center - midpoint) @ axis)
+    proj_e_mean = float((e_center - midpoint) @ axis)
+    proj_g_sigma = float(np.sqrt(axis @ cov_g @ axis))
+    proj_e_sigma = float(np.sqrt(axis @ cov_e @ axis))
+    separation = float(abs(proj_e_mean - proj_g_mean))
+    pooled_sigma = math.sqrt(0.5 * (proj_g_sigma**2 + proj_e_sigma**2))
+    snr_analog = separation / pooled_sigma if pooled_sigma > 0 else np.inf
+
+    # equal-priors threshold of the two fitted Gaussians: max |CDF_g - CDF_e|
+    lo = min(proj_g_mean - 5 * proj_g_sigma, proj_e_mean - 5 * proj_e_sigma)
+    hi = max(proj_g_mean + 5 * proj_g_sigma, proj_e_mean + 5 * proj_e_sigma)
+    grid = np.linspace(lo, hi, 4001)
+    cdf_g = scipy.special.ndtr((grid - proj_g_mean) / proj_g_sigma)
+    cdf_e = scipy.special.ndtr((grid - proj_e_mean) / proj_e_sigma)
+    k = int(np.argmax(cdf_g - cdf_e))
+    threshold = float(grid[k])
+    p_gg, p_ee = float(cdf_g[k]), float(1.0 - cdf_e[k])
+    contrast = p_gg + p_ee - 1.0
+    confusion = np.array([[p_gg, 1.0 - p_gg], [1.0 - p_ee, p_ee]])
+
+    warnings = [
+        "readout self-calibrated from the record (no labelled shots): the g/e clouds come "
+        "from an unlabelled two-Gaussian fit of the same shots, the more populated cloud "
+        "taken as g"
+    ]
+    if snr_analog < 1.0:
+        warnings.append(
+            f"analog SNR {snr_analog:.2f} < 1: clouds barely separated; "
+            "single-shot parity mapping will be dominated by readout noise"
+        )
+    if contrast < 0.3:
+        warnings.append(
+            f"readout contrast {contrast:.3f} < 0.3: parity trace will be "
+            "heavily mixed; treat rate estimates with caution"
+        )
+    n = pts.shape[0]
+    return {
+        "g_center": g_center,
+        "e_center": e_center,
+        "cov_g": cov_g,
+        "cov_e": cov_e,
+        "axis": axis,
+        "midpoint": midpoint,
+        "proj_g_mean": proj_g_mean,
+        "proj_e_mean": proj_e_mean,
+        "proj_g_sigma": proj_g_sigma,
+        "proj_e_sigma": proj_e_sigma,
+        "separation": separation,
+        "snr_analog": float(snr_analog),
+        "threshold": threshold,
+        "confusion_matrix": confusion,
+        "contrast": float(contrast),
+        "max_cdf_gap": float(contrast),
+        "assignment_fidelity": float(0.5 * (1.0 + contrast)),
+        "e_above_threshold": True,
+        "n_g": int(round(n * (1.0 - w_e))),
+        "n_e": int(round(n * w_e)),
+        "use_lda": True,
+        "w_e": w_e,
+        "clean_cloud_source": "record_mixture",
+        "readout_gate_warnings": warnings[1:],
+        "warnings": warnings,
+    }
 
 
 def classify_thermal_tail(i_th, q_th, cfg, read_index):

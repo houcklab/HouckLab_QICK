@@ -69,9 +69,11 @@ and the `read`.
   check is in tProc cycles, so two delays that round to the same cycle count are
   rejected. With the default latency, `reset_readout_relax_delay` must be ≥ 0.7 µs.
   Shipped configs use 1.0 or 5.0 µs.
-- Set it in `ModifiedRamsey_params`, `ModifiedRamsey_Control_params` or
-  `ActiveResetVerify_params` (the runners forward it only when it is present), or in the
-  base/device cfg.
+- Set it in `ModifiedRamsey_params` or `ActiveResetVerify_params` (the runners forward
+  it only when it is present), or in the base/device cfg. modified_ramsey_control uses
+  the `ModifiedRamsey_params` reset keys when the runner passes that dict (the CSTQ03
+  runner does); its own `ModifiedRamsey_Control_params` reset keys are then ignored
+  (each differing one is printed as ignored) and read only on the fallback path without it.
 
 ## How it decides
 
@@ -279,7 +281,9 @@ The reset itself writes nothing. Its traces are:
   `condj` for its force-pi diagnostic).
 - In the symmetric Ramsey scheme and in the `drive_detuned` control, the corrective
   pi plays at the drive frequency. That is df/2 or more away from each parity branch,
-  so the reset flip is off-resonant.
+  so the reset flip is off-resonant. With active reset, `drive_detuned` is therefore
+  decisive only when the reset pi is predicted to flip each branch with ≥ 0.95
+  ([modified_ramsey](modified_ramsey.md#analysis)).
 - `calibrate_active_reset_readout` used to add `deg2reg(±φ)` to `res_phase` without
   wrapping, so the third calibration in one regime-A session (e.g. ARV → MR → MR) failed
   to compile. It now wraps modulo 2^`b_phase` (2026-10).

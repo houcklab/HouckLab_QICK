@@ -140,9 +140,9 @@ measure(..., adc_trig_offset=o, wait=True, syncdelay=d)
   emits does not.
 - QICK tracks generator and readout timestamps in their native cycles converted to tProc cycles;
   `sync_all()` truncates the largest to an integer tProc cycle.
-- The rep period is the sum of the `synci` and `sync` advances in the loop body. `ModifiedRamsey`
-  and `UndrivenSingleShot` compute it from the compiled program (`scheduled_rep_period_us`) and use
-  it as the time axis of shot records. A register-valued `sync` in the loop makes the period not a
+- The rep period is the sum of the `synci` and `sync` advances in the loop body. `ModifiedRamsey`,
+  `UndrivenSingleShot` and `ChargeDispersionQuasiCW` compute it from the compiled program
+  (`scheduled_rep_period_us`) and use it as the time axis of shot records. A register-valued `sync` in the loop makes the period not a
   compile-time constant; `UndrivenSingleShot` raises in that case.
 - Streamer wall-clock statistics include polling and transfer latency. Use the scheduled period,
   not wall-clock time, as the physical time base (it includes active-reset overhead).

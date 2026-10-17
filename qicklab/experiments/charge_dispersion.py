@@ -6,6 +6,7 @@ from qick import AveragerProgram, RAveragerProgram
 
 from qicklab.core.experiment import ExperimentClass
 from qicklab.core.readout import cover_readout_window
+from qicklab.core.schedule import RepPeriodMixin
 
 
 class ChargeDispersionProgram(AveragerProgram):
@@ -174,7 +175,10 @@ class ChargeDispersion(ExperimentClass):
         super().save_data(data=data["data"])
 
 
-class ChargeDispersionQuasiCWProg(RAveragerProgram):
+class ChargeDispersionQuasiCWProg(RepPeriodMixin, RAveragerProgram):
+    """scheduled_rep_period_us(): the per-rep period of the emitted schedule (no register
+    sync in the body), the time step of the quasi-CW record."""
+
     def initialize(self):
         cfg = self.cfg
 
