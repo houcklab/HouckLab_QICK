@@ -207,12 +207,28 @@ Session 3 (Windows PC, 2026-10-14; https://claude.ai/code/session_013hKCT9KZpyGQ
     updated; F32 PSD not gap-aware, HMM cut to the first 1e5 samples; F73 stage-7 mean_dwell still the arithmetic mean,
     threshold_stability default percentiles sit inside a cloud; F75 covered_us not saved; F74 Repeat 10000 still the runner
     value (documented cost).
+56. `7d6e7c5e` fix(modified_ramsey): tier-B batch B7 — F31 (predict_parity_mapping two-level propagator; echo_null marked
+    'not a null' above a 0.2 predicted residual ratio and excluded from the decisive checks), F39 (drive_detuned judged as
+    an inverted mapping with a reset-pi transfer gate; tau_offset defaults to the predicted null: even harmonic, or the
+    solved zero in the symmetric scheme; runner control_tau_offset_frac 0.25 -> None), F30 (mapping probabilities fitted
+    with the rate, gate at the fitted mapping, mixture i.i.d. null, predicted-mapping seed), F38 (clean readout clouds
+    from a labelled two-Gaussian mixture; MR emissions use them under a fitted/calibrated mapping), F42 (f_ge-vs-qubit
+    guard, warn by default, require_f_ge_near_qubit opt-in), F41 (MRC runs the MR sequence via build_modified_ramsey_cfg
+    with a SingleShot at V_sweet; true-state-separation normalised lag-covariance ratio with a predicted prep
+    correction), F40 (charge_sweep_voltages, joint doublet refit, smoothed quarter-max censor bound, splitting fit in the
+    npz), F72 (quasi-CW parity analysis with self-calibrated readout and the program's rep period) (golden: 898 leaves in
+    3 labels: F31 keys on the MR control records; MRC[verified] re-sequenced by the SingleShot_MRCalib records). Known /
+    follow-ups: F31 1-2-1-3 order and mapping seeding beyond the HMM seed; F39 tau_offset / drive_detuned not in the
+    runner's validation_controls; F30 i.i.d.-LR / resolved-rate gates (tier C); F38 reset threshold and apriori separator
+    stay on the raw e centre; F41 SS pi still at ctx.qubit_frequency_center, num_cycles 1000 documented; F40 S vs T
+    period open, 5 mV grid reports undersampled; F72 relax_delay / active reset in the QCW program (tier C). Two
+    orchestrator test edits (doublet-selection FakeQcw.prog; latency test's MRC case now compiles) are in the commit.
 TIER A IS COMPLETE. Next: tier B in batches (plan: scratchpad tierB_plan.md of session 3 -> copied below), then the
 dead-cfg-key commit, 5a, 5b, 6, docs rewrite, merge back.
 Tier-B batches (one workflow, one regeneration, one commit each): B1 F51 F52 F84 | B2 F29 F65 F78 F83 F68+F79 F66 F82 |
 B3 F35 F64 | B4 F59 F60 F61 F62 F63 | B5 F36 F37 F69 F70 F71 | B6 F32 F43 F44 F45 F73 F74 F75 F76 |
 B7 F30 F31 F38 F39 F40 F41 F42 F72 | B8 F77 F80 F81 | B9 F54 F55 | B10 F46 alone. Skip F47 (= F21+F53).
-Landed: B1-B6 (items 50-55). Next: B7 (brief ready), then B8-B10.
+Landed: B1-B7 (items 50-56). Next: B8 (brief ready), B9, B10.
 Phase-5a inputs, not commits now: F49, F50 (Device.validate), F56, F57, F58.
 ALL EIGHT PARKED ITEMS ARE LANDED (39-46). `qicklab_refactor_wip` is deleted; the per-item table in TRANSFER STATE is
 historical. Pushed to origin after 46.
