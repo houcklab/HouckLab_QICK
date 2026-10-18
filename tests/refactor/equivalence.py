@@ -46,8 +46,9 @@ LEGACY_COMMIT = "0f0a51f"
 LEGACY_PREFIX = "WorkingProjects.QM_Team.qubit_measurements.Client_modules"
 LEGACY_DIR = LEGACY_PREFIX.replace(".", "/")
 NEW_TOPS = ("qicklab", "runners", "tests", "devices")
-# Never imported: the legacy runner executes a measurement session at import time;
-# runners/ and tests/ in the new tree are scripts, checked statically.
+# Never imported: the legacy runner (at LEGACY_COMMIT; its runners/ copy is deleted since 5b)
+# executes a measurement session at import time; runners/ and tests/ in the new tree are
+# scripts, checked statically.
 NEVER_IMPORT = (f"{LEGACY_PREFIX}.Runners.CSTQ03_BFC", "runners", "tests")
 MODULE_DUNDERS = frozenset(
     "__file__ __name__ __doc__ __spec__ __package__ __path__ __loader__ __cached__".split()

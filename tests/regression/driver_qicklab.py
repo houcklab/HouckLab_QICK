@@ -19,7 +19,8 @@ their current values. Besides one run per flag there are:
 * multi-flag labels ``FlagA+FlagB`` (``MULTI``), for state carried from one
   dispatch to the next.
 
-This is the post-refactor driver: identical to ``driver_legacy`` except for
+This is the post-refactor driver: identical to the pre-refactor ``driver_legacy``
+(deleted in phase 5b with the legacy runner) except for
 the package constants (``RUNS_PACKAGE = "qicklab.runs"``, the experiment base
 class from ``qicklab.core.experiment``, the proxy factory in
 ``qicklab.hardware.rfsoc`` under both its new name and its legacy alias), and

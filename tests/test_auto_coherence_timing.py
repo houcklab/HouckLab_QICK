@@ -16,7 +16,8 @@ import pytest
 
 from tests.regression import capture
 
-# the CSTQ03 runner's AutoCoherence overrides that matter here (runners/CSTQ03_BFC.py)
+# the legacy CSTQ03 runner's AutoCoherence overrides that matter here (runners/CSTQ03_BFC.py,
+# deleted in phase 5b; STEP["auto_coherence"] in runners/CSTQ03_session.py carries them)
 CSTQ03 = {"T1_step": 5, "T2_step": 0.1, "T2_expts": 401, "T2E_max_us": 500}
 
 

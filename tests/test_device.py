@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+from devices.archive.CSTQ03_v2b import DEVICE as V2B
 from devices.CSTQ03 import DEVICE
 from qicklab.core.context import build_context
 from qicklab.core.device import (
@@ -24,7 +25,6 @@ from qicklab.core.device import (
 from tests.regression.capture import FakeSocCfg
 
 REPO = Path(__file__).resolve().parents[1]
-RUNNER = REPO / "runners" / "CSTQ03_BFC.py"
 FIXTURE = REPO / "tests" / "regression" / "fixtures" / "cstq03_legacy_runner.py.txt"
 
 
@@ -44,8 +44,9 @@ def _sections_1_2(path):
     return ns
 
 
-@pytest.fixture(scope="module", params=[RUNNER, FIXTURE], ids=["runner", "frozen_fixture"])
+@pytest.fixture(scope="module", params=[FIXTURE], ids=["frozen_fixture"])
 def legacy(request):
+    """Sections 1-2 of the legacy CSTQ03 runner (deleted in 5b) from its frozen copy."""
     return _sections_1_2(request.param)
 
 
@@ -76,6 +77,25 @@ def test_legacy_parameters_is_a_fresh_dict():
     a = DEVICE.legacy_parameters()
     a["5"]["Qubit"]["Frequency"] = 0
     assert DEVICE.legacy_parameters()["5"]["Qubit"]["Frequency"] == 2651
+
+
+def test_archived_v2b_is_the_runner_table(legacy):
+    """devices/archive/CSTQ03_v2b.py is the legacy runner's unused Qubit_Parameters_v2b."""
+    new = V2B.legacy_parameters()
+    old = legacy["Qubit_Parameters_v2b"]
+    assert repr(new) == repr(old)  # same keys, order, values and int/float types
+    assert V2B.name == DEVICE.name and V2B.cooldown != DEVICE.cooldown
+    _quiet_validate(V2B)  # no hard error (pi2/gain warnings are the table's own)
+
+
+def test_no_session_code_imports_the_archive():
+    users = [
+        str(path.relative_to(REPO))
+        for top in ("qicklab", "runners", "devices")
+        for path in (REPO / top).rglob("*.py")
+        if "devices.archive" in path.read_text(encoding="utf-8")
+    ]
+    assert not users
 
 
 def test_folders_match_qubit_folders(legacy):

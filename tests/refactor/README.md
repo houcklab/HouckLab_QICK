@@ -98,7 +98,9 @@ Placements forced by import cycles (deviations from the design text):
 then imported in a second session. Third-party modules (qick, numpy, ...) are shared, so
 object identity across the two sides means something. The checker never imports these,
 and checks them statically instead:
-- the legacy runner (`CSTQ03_BFC.py` runs a session at import)
+- the legacy runner `Runners/CSTQ03_BFC.py` at `0f0a51f` (it runs a session at import; its
+  3a copy `runners/CSTQ03_BFC.py` was deleted in phase 5b, and its symbol-map rows are
+  `deleted`/`3b`)
 - `runners/*`
 - `tests/*`
 - anything that fails to import (reported as `WARN [import]`)

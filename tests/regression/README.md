@@ -11,8 +11,8 @@ REGRESSION_DRIVERS=plan python -m pytest tests/regression           # only the S
 REGRESSION_LABELS=RunT1,RunT2 python -m pytest tests/regression     # just some runs
 REGRESSION_VARIANTS=A python -m pytest tests/regression             # just one board variant
 REGRESSION_UPDATE=1 python -m pytest tests/regression               # rewrite the golden from current code
-python -m tests.regression.driver_legacy                            # same as UPDATE, without pytest
-python -m tests.regression.driver_legacy RunT1                      # dry run (both variants), golden untouched
+python -m tests.regression.driver_qicklab                           # same as UPDATE, without pytest
+python -m tests.regression.driver_qicklab RunT1                     # dry run (both variants), golden untouched
 python -m tests.regression.driver_plan RunT1                        # the same through Session + PLAN (never writes)
 python docs/dev/refactor-2026-10/tools/diff_labels.py RunT1 --variants A --driver plan   # leaf diff vs the golden
 python -m pytest tests/test_program_timing.py                       # pinned schedule/readout numbers (~3 s)
@@ -31,8 +31,7 @@ writes the golden); `driver_plan` is skipped and compares on the next plain run.
 | File | Role |
 |---|---|
 | `capture.py` | Layout-agnostic core: instrumentation, digests, normalisation. The fakes and synthetic boards (`FakeSoc`, `FakeSocCfg`, `FakeYoko`, `STATE`, `set_board`, ...) live in `qicklab/core/fakes.py` since phase 5a (shared with `run(..., dry_run=True)`) and are re-exported here under the same names. |
-| `driver_legacy.py` | Replays every dispatch of the frozen runner, plus variant and multi-flag labels. |
-| `driver_qicklab.py` | `driver_legacy.py` on the `qicklab` package (the legacy call shapes `build_context` / `run_*`). The only driver that writes the golden. |
+| `driver_qicklab.py` | Replays every dispatch of the frozen runner, plus variant and multi-flag labels, on the `qicklab` package (the legacy call shapes `build_context` / `run_*`). The only driver that writes the golden. Its pre-refactor twin `driver_legacy.py` (the same replay on the pre-refactor `WorkingProjects.` package) was deleted in phase 5b. |
 | `driver_plan.py` | The same labels as `Session(devices.CSTQ03)` + a PLAN of recipes ([below](#driver_plan-the-session-api-replay)). Compares only. |
 | `fixtures/cstq03_legacy_params.py` | Reads the frozen runner's values and dispatches (never a hand copy) and translates them to group / recipe keywords. |
 | `fixtures/cstq03_legacy_runner.py.txt` | Verbatim copy of `Runners/CSTQ03_BFC.py` at commit `0f0a51f`. **Never edit** (see `fixtures/README.md`). |
@@ -383,11 +382,12 @@ golden captured on a different architecture will show the same 15 labels.
 ## After the refactor
 
 `driver_qicklab.py` (now the `DRIVER` in `test_golden.py`) is `driver_legacy.py`
-with only the package constants switched (`RUNS_PACKAGE = "qicklab.runs"`, the
-`ExperimentClass` from `qicklab.core.experiment`, `make_proxy` and its alias
-`makeProxy` in `qicklab.hardware.rfsoc`), reading the same frozen fixture with the
-same legacy run labels; until phase 3a-ii it also installs the virtual clock in the
-modules still under `WorkingProjects.`.
+(deleted in phase 5b) with only the package constants switched
+(`RUNS_PACKAGE = "qicklab.runs"`, the `ExperimentClass` from
+`qicklab.core.experiment`, `make_proxy` and its alias `makeProxy` in
+`qicklab.hardware.rfsoc`), reading the same frozen fixture with the same legacy
+run labels; until phase 3a-ii it also installs the virtual clock in the modules
+still under `WorkingProjects.`.
 Differences that are intentional must be justified one by one before the
 golden is regenerated.
 
@@ -399,7 +399,7 @@ hardware exactly what the legacy runner sent. Per label:
 
 1. `fixtures/cstq03_legacy_params.namespace()` executes the frozen runner's
    sections 1-2; the label's override (`driver_qicklab.OVERRIDES` / `MULTI`, the
-   very functions the legacy driver applies) edits that namespace.
+   very functions `driver_qicklab` applies) edits that namespace.
 2. `Session(DEVICE with data_root = the temp root, Qubit_Readout, Qubit_Pulse,
    start_voltage, yoko_fixed=..., <group>=G.<group>(**group_kwargs(...)))`:
    every group is rebuilt from its runner dict (a runner key with no keyword
@@ -421,7 +421,7 @@ Side effects of the session layer that the golden does not see: the per-step
 parameter log, the A -> B switch lines, and the calibration write-back of a
 transmission step whose gate passed (`calibrations.jsonl` in the temp root,
 deleted with it). The capture budget, the virtual clock and the RNG seeds are
-the legacy driver's. Last checked 2026-10-17: all 43 labels identical on A and
+`driver_qicklab`'s. Last checked 2026-10-17: all 43 labels identical on A and
 B (`diff_labels.py <labels> --driver plan`).
 
 ## Allowed cfg diffs (dead keys dropped)

@@ -4,7 +4,7 @@ Device record for CSTQ03, a six-qubit BFC chip and the production target for the
 Modified Ramsey charge-parity measurements. Current cooldown: **2026-10-01** (BFC cooldown).
 The numbers the code uses live in `devices/CSTQ03.py`; this page holds the history and the
 measurements behind them. The parameter set used before this cooldown table ("v2b nu cell")
-is archived at the bottom and in `devices/archive/`.
+is archived at the bottom and in `devices/archive/CSTQ03_v2b.py`.
 
 Dating convention: entries marked "runner note, undated" come from inline comments in the
 legacy runner as of 2026-10-13 and carry no date of their own. Measured facts are attributed
@@ -186,8 +186,9 @@ was recommended on the premise that it keeps echo_null as a decisive control, bu
 0.1 us the finite-pulse echo is not a null at either k (skipped at k = 3, not a null at k = 5;
 see [the echo null](../experiments/modified_ramsey.md#echo-is-a-null-only-for-short-pulses)).
 The echo becomes a usable null only at shorter sigma (sigma = 0.04 us, k = 3: echo 0.063
-against main 0.960). The legacy runner still has `df` = 1, `tau_harmonic_k` = 1, which
-contradicts this analysis.
+against main 0.960). The legacy runner (deleted in 5b) had `df` = 1, `tau_harmonic_k` = 1,
+which contradicts this analysis; the session keeps them (`df=1` in `STEP["modified_ramsey"]` of
+`runners/CSTQ03_session.py`, `tau_harmonic_k` = 1 as the `R.modified_ramsey` default).
 
 ### Unresolved drive-bandwidth limit (df = 2.7 MHz, sigma = 0.1 us)
 
@@ -224,8 +225,10 @@ not with a lower HMM gate. At 250 us relax: 100 000 shots is about 26 s and 10 5
 400 000 shots about 105 s and 42 000 dwells (the old 4.7 s relax-0 record had 1880). Start at
 100k.
 
-The legacy runner has `mr_relax_delay` = 500 us with the comment "5x T1=50us" (5 x 50 = 250) and
-`mr_reps` = 50 000, while the text recommends 250 us and 100k. Which is intended is not settled.
+The legacy runner (deleted in 5b) had `mr_relax_delay` = 500 us with the comment "5x T1=50us"
+(5 x 50 = 250) and `mr_reps` = 50 000, while the text recommends 250 us and 100k. The session
+keeps 500 us and 50 000 (the `R.modified_ramsey` defaults, which `STEP["modified_ramsey"]` of
+`runners/CSTQ03_session.py` does not override). Which is intended is not settled.
 
 ### HMM emission gate (CSTQ03 Q2, 2026-08-04)
 
@@ -259,8 +262,12 @@ and remember 6/kappa = 6/(2 pi x kappa_tot/2pi): 0.19 MHz gives 5 us. ActiveRese
 
 ## Archived: v2b "nu cell" parameter set
 
-Kept in `devices/archive/CSTQ03_v2b.py`; not used by any code. Whether "v2b nu cell" is a
-previous cooldown of this chip or a sibling chip is not recorded.
+Kept in `devices/archive/CSTQ03_v2b.py` (a `Device` with `cooldown="v2b"`, since phase 5b; before
+that the unused `Qubit_Parameters_v2b` of the legacy runner); not used by any code. Whether
+"v2b nu cell" is a previous cooldown of this chip or a sibling chip is not recorded. The
+v2b slots' "currently working on N" notes (Q1 -> 3, Q2 -> 6, Q3 -> 4, Q4 -> blank, Q5 -> 5,
+Q6 -> 2; meaning unknown) are in [Per-qubit history](#per-qubit-history) and as comments in the
+archive file.
 
 | Q | readout f | readout gain | qubit f | pi gain | pi/2 gain | sigma | flat-top | notes (runner notes, undated) |
 |---|---|---|---|---|---|---|---|---|

@@ -6,8 +6,9 @@ take data; this page is for people who change the code.
 
 > Status (2026-10-17): the `qicklab_refactor` branch is mid-migration. The session layer
 > (phase 5a: `core.device`, `core.session`, `core.fakes`, `runs.groups`, `runs.recipes`,
-> `devices/CSTQ03.py`, `runners/CSTQ03_session.py`) is in; `runners/CSTQ03_BFC.py` is deleted
-> in 5b. `core.params`, `scripts/gen_docs.py` and `docs/parameters.md` are phase 6 and not
+> `devices/CSTQ03.py`, `runners/CSTQ03_session.py`) is in, and the legacy flag runner
+> `runners/CSTQ03_BFC.py` was deleted in 5b (its parameters stay frozen in
+> `tests/regression/fixtures/cstq03_legacy_runner.py.txt`). `core.params`, `scripts/gen_docs.py` and `docs/parameters.md` are phase 6 and not
 > present yet.
 
 ## Package layout and layering
@@ -15,7 +16,6 @@ take data; this page is for people who change the code.
 ```
 devices/        one file per chip+cooldown (Device dataclass); archive/ for old cooldowns
 runners/        <device>_session.py: the per-session script a researcher edits
-                (CSTQ03_BFC.py: the legacy flag runner, until phase 5b)
 qicklab/
   hardware/     rfsoc, board (BASE_CONFIG), yoko, attenuator, sc5510a, pnax, synthhd
   core/         experiment (ExperimentClass), device, context, config, session, params,
@@ -160,7 +160,7 @@ which code, board, session and bias produced the file, which the cfg alone canno
 | `soccfg_sha1` | sha1 of `soccfg.dump_cfg()`: equal hashes mean the same firmware configuration |
 | `git_commit`, `git_dirty` | `git rev-parse HEAD` and `git status --porcelain --untracked-files=no` in the repo (5 s timeout). `git_dirty` = tracked files modified: the commit alone does not reproduce the code. Both None when git is missing or the package is not a checkout |
 | `python_version`, `hostname`, `script` | `script` is `sys.argv[0]` (None in a REPL) |
-| `device`, `data_root`, `qubit_readout`, `qubit_pulse`, `rfsoc_host`, `rfsoc_port`, `rfsoc_name`, `rfsoc_timeout_s`, `yoko_addr`, `start_voltage`, `yoko_fixed`, `session_start_time` | the session record `build_context` registers with `io.start_session` (`device` is `build_context(device=...)`: `runners/CSTQ03_BFC.py` passes `"CSTQ03"`; None when not passed). Absent when no `build_context` ran in the process (TWPA scripts, offline analysis) |
+| `device`, `data_root`, `qubit_readout`, `qubit_pulse`, `rfsoc_host`, `rfsoc_port`, `rfsoc_name`, `rfsoc_timeout_s`, `yoko_addr`, `start_voltage`, `yoko_fixed`, `session_start_time` | the session record `build_context` registers with `io.start_session` (`device` is `build_context(device=...)`: `connect(session)` passes `Device.name`, as the legacy CSTQ03 runner passed `"CSTQ03"`; None when not passed). Absent when no `build_context` ran in the process (TWPA scripts, offline analysis) |
 | `bias` | per source, the last ramp in this process: `charge_yoko` (`ramp_to`, V) and `twpa_bias` (`ramp_current`, A), each with `address`, `unit`, `setpoint`, `readback` and `time`. `readback` is the `:SOUR:LEV?` reply the ramp already takes (the GS200 setpoint register, not a measurement of the output). Nothing is queried at save time, so the yoko traffic is unchanged |
 | `program_class`, `program_asm_sha1` | only for classes that keep their program as `self.prog`: sha1 of `prog.asm()`. `ZeroSpanParity` gets it through `save_config` (h5 attribute and `_provenance.json`); `ChargeDispersionQuasiCW` has no h5 or cfg json, so it gets it in the `save_record` sidecar (below) |
 | `experiment_class`, `outer_folder`, `data_file` | the experiment's class, `outerFolder` and h5 name at save time (on a run-level sidecar, only when the experiment is passed) |

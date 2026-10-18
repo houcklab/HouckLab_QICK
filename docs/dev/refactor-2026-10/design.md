@@ -99,7 +99,7 @@ HouckLab_QICK/
 | Runners/runs/charge_parity.py | runs/modified_ramsey.py (run_modified_ramsey, run_modified_ramsey_control), runs/charge_dispersion.py (3 fns), runs/charge_sweep.py (run_charge_sweep, run_charge_transmission_sweep, charge_sweep_voltages) | 3b: dedupe KMeans/plot/save blocks into analysis/iq.py, analysis/plotting.py, core/io.py |
 | Runners/runs/zero_span.py, interleave.py | runs/zero_span.py, runs/interleave.py | |
 | Runners/runs/__init__.py | runs/__init__.py explicit re-exports + `__all__`; STEPS registry added in phase 5 | |
-| Runners/CSTQ03_BFC.py | runners/CSTQ03_BFC.py during 3a–3b (import line only); phase 5 replaces it with devices/CSTQ03.py + runners/session.py and deletes it | |
+| Runners/CSTQ03_BFC.py | runners/CSTQ03_BFC.py during 3a–3b (import line only); phase 5 replaces it with devices/CSTQ03.py + runners/<device>_session.py (CSTQ03_session.py) and deletes it | |
 
 ## Device / session layer (phase 5) — v3 after critique
 Legacy param dicts are SHARED (Spec_relevant_params feeds 6 runs + the regime-A base cfg; T1T2_params 6; SS_params 5 + the regime-B switch). The model must keep that.

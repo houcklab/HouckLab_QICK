@@ -1,6 +1,8 @@
 """Measurement routines: each `run_*(ctx, params...)` is one `if RunX:` block of the legacy runner.
 
-`__all__` also re-exports the helpers runners/CSTQ03_BFC.py gets from its star import (until phase 5).
+`__all__` also re-exports the helpers the legacy CSTQ03 runner got from its star import: the
+golden's driver_qicklab seeds the frozen runner's namespace with exactly these names
+(tests/regression/fixtures/cstq03_legacy_runner.py.txt), so they stay while it replays it.
 `STEPS` (canonical step name -> recipe, from qicklab.runs.recipes) is exported but kept out of
 `__all__`, so that star import binds the same names as before.
 """

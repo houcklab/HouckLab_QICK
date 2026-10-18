@@ -7,8 +7,8 @@ physics lives in `qicklab`; all chip numbers live in `devices/<device>.py`
 
 > Status (2026-10-17): `Session`, `run`, `connect`, `run_step` and the dry run are in
 > `qicklab/core/session.py`; the CSTQ03 session runner is `runners/CSTQ03_session.py`
-> ([below](#the-cstq03-session-runner)). `runners/CSTQ03_BFC.py` still works and is deleted in
-> phase 5b. Every recipe keyword is in its function's docstring (`help(R.t1)`); the generated
+> ([below](#the-cstq03-session-runner)); the legacy flag runner `runners/CSTQ03_BFC.py` was
+> deleted in phase 5b. Every recipe keyword is in its function's docstring (`help(R.t1)`); the generated
 > tables (`docs/parameters.md`, each [experiments/](experiments/README.md) page) come in phase 6.
 
 ## The session file
@@ -51,8 +51,9 @@ Nothing touches hardware until `run()` is called. Importing the file is safe.
 
 ### The CSTQ03 session runner
 
-`runners/CSTQ03_session.py` is the session file for CSTQ03 and replaces
-`runners/CSTQ03_BFC.py`. It has three blocks:
+`runners/CSTQ03_session.py` is the session file for CSTQ03. It replaced the legacy flag runner
+`runners/CSTQ03_BFC.py` (deleted in phase 5b; frozen in
+`tests/regression/fixtures/cstq03_legacy_runner.py.txt`). It has three blocks:
 
 1. `SESSION`: qubits, bias, `yoko_fixed`, and the shared groups. Only the legacy runner's
    repetition counts differ from the library groups (`G.coherence(repetitions=1000)`,
@@ -79,7 +80,8 @@ flag, not a copy of its dicts: every key the run reads has the runner's value, t
 defaults are written out, and the runner's dead keys (keys the run never reads, such as
 `lower_freq`/`upper_freq` of `ChargeDispersion_params` and `Gauss` of
 `ModifiedRamsey_Control_params`) are dropped. `tests/test_session_runner.py` checks this, step
-by step, while the legacy runner exists; the dropped keys are a pinned list there, so a runner
+by step, against the frozen copy of the legacy runner plus the value changes it received after
+the freeze (`POST_FREEZE` there); the dropped keys are a pinned list there, so a runner
 key with no recipe keyword fails the test rather than silently not reaching the run. A
 legacy flag maps to its step like this:
 

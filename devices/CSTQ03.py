@@ -1,8 +1,10 @@
 """CSTQ03, 2026-10-01 BFC cooldown. History and measurements: docs/devices/CSTQ03.md.
 
-Values as in runners/CSTQ03_BFC.py sections 1-2 on 2026-10-17. Inline notes undated in the
-legacy runner are marked "runner, undated". No ParityParams are calibrated in this cooldown:
-the runner's Modified Ramsey f_ge 3754.5 / df 1 is Q2's centre, not a measured upper branch.
+Values as in the legacy runner (runners/CSTQ03_BFC.py, deleted in phase 5b) sections 1-2 on
+2026-10-17, frozen in tests/regression/fixtures/cstq03_legacy_runner.py.txt. Inline notes
+undated in the legacy runner are marked "runner, undated". No ParityParams are calibrated in
+this cooldown: the runner's Modified Ramsey f_ge 3754.5 / df 1 is Q2's centre, not a measured
+upper branch.
 """
 
 from qicklab.core.device import Device, Qubit, Readout, ReadoutWindow, Setup, TwpaSetup

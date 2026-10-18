@@ -3,9 +3,10 @@
     python -m runners.CSTQ03_session              # on the fridge (RFSoC + charge yoko)
     python -m runners.CSTQ03_session --dry-run    # fake board: compile every program, keep nothing
 
-Device numbers live in devices/CSTQ03.py. STEP holds every step of runners/CSTQ03_BFC.py with
-that runner's values (where they differ from the library defaults), so PLAN = [STEP["t1"]] does
-what `RunT1 = True` did there; any recipe keyword changes one step (R.t1(relax_delay=5000)).
+Device numbers live in devices/CSTQ03.py. STEP holds every step of the legacy runner
+runners/CSTQ03_BFC.py (deleted in phase 5b) with that runner's values (where they differ from
+the library defaults), so PLAN = [STEP["t1"]] does what `RunT1 = True` did there; any recipe
+keyword changes one step (R.t1(relax_delay=5000)).
 Each step's effective parameters are printed before it runs. Guide: docs/running_a_session.md.
 """
 

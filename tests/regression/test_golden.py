@@ -25,7 +25,7 @@ from qick import get_version
 
 from tests.regression import capture as core
 
-DRIVER = "tests.regression.driver_qicklab"  # pre-refactor: tests.regression.driver_legacy
+DRIVER = "tests.regression.driver_qicklab"  # pre-refactor: driver_legacy (deleted in 5b)
 PLAN_DRIVER = "tests.regression.driver_plan"  # compares only; never writes the golden
 DRIVERS = (DRIVER, PLAN_DRIVER)
 GOLDEN = Path(__file__).with_name("golden_cstq03.json")

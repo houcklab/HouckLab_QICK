@@ -1,8 +1,10 @@
-"""runners/CSTQ03_session.py hands every step the arguments runners/CSTQ03_BFC.py passes.
+"""runners/CSTQ03_session.py hands every step the arguments the legacy CSTQ03 runner passed.
 
-The legacy runner's sections 1-2 are executed (imports dropped) and every `if <Flag>: run_*`
-of its section 3 is evaluated there. For every dispatch the session runner's STEP[<step>],
-resolved against its SESSION, must produce:
+The legacy runner (runners/CSTQ03_BFC.py, deleted in phase 5b) is read from its frozen copy,
+tests/regression/fixtures/cstq03_legacy_runner.py.txt (via cstq03_legacy_params), with the
+value changes the live runner received after the freeze applied on top (POST_FREEZE, each
+with its commit). For every `if <Flag>: run_*` of its section 3 the session runner's
+STEP[<step>], resolved against its SESSION, must produce:
 
 * exactly what R.<step>(...) builds from the runner's own dicts (same keys, values, types and
   key order, as printed);
@@ -12,13 +14,10 @@ resolved against its SESSION, must produce:
   keyword therefore fails here instead of silently never reaching the run).
 
 The printed dicts are equivalent to the runner's, not textually equal: the dead keys are
-dropped and the run_* defaults are written out. Delete this module with the legacy runner
-(phase 5b): it skips itself at module level once runners/CSTQ03_BFC.py is gone.
+dropped and the run_* defaults are written out.
 """
 
-import ast
 import importlib
-from pathlib import Path
 
 import pytest
 
@@ -27,34 +26,31 @@ from qicklab.runs import groups as G
 from qicklab.runs import recipes as R
 from tests.regression.fixtures import cstq03_legacy_params as F
 
-REPO = Path(__file__).resolve().parents[1]
-LEGACY = REPO / "runners" / "CSTQ03_BFC.py"
-if not LEGACY.exists():
-    pytest.skip("legacy runner deleted (5b)", allow_module_level=True)
-
 runner = importlib.import_module("runners.CSTQ03_session")
+
+# (runner dict, key, value the live runner had when it was deleted): its changes after the
+# freeze at 0f0a51f, which runners/CSTQ03_session.py carries. The live runner also dropped
+# `ts` (837e0d45, dead cfg keys; build_context ignores it), which no step reads.
+POST_FREEZE = (
+    ("Amplitude_Rabi_params", "flattop_relax_delay", 8000),  # F84, 0397f869: honoured knob
+    ("T1T2_params", "f_virt_mhz", None),  # F29, 192e09a3: virtual Ramsey detuning
+    ("ModifiedRamsey_params", "control_tau_offset_frac", None),  # F39, 7d6e7c5e: was 0.25
+    ("ZSP_AnalysisParams", "classifier_method", "apriori_gmm"),  # F07, 5f72d402: was its alias
+)
+# F41 (7d6e7c5e): the live runner's modified-Ramsey control also received ModifiedRamsey_params.
+ALSO_PASSES = {"RunModifiedRamsey_Control": "ModifiedRamsey_params"}
 
 
 def _legacy():
-    """(namespace of sections 1-2, [(flag, [args after ctx])] of section 3)."""
-    tree = ast.parse(LEGACY.read_text(encoding="utf-8"))
-    cut = next(
-        i
-        for i, node in enumerate(tree.body)
-        if isinstance(node, ast.Assign) and getattr(node.targets[0], "id", None) == "ctx"
-    )
-    prefix = [n for n in tree.body[:cut] if not isinstance(n, (ast.Import, ast.ImportFrom))]
-    ns = {}
-    exec(compile(ast.Module(body=prefix, type_ignores=[]), str(LEGACY), "exec"), ns)
-
-    def value(node):
-        return eval(compile(ast.Expression(node), str(LEGACY), "eval"), {"__builtins__": {}}, ns)
-
+    """(namespace of sections 1-2, [(flag, [args after ctx])] of section 3), as at deletion."""
+    ns = F.namespace()
+    for name, key, value in POST_FREEZE:
+        ns[name][key] = value
     dispatches = []
-    for node in tree.body[cut:]:
-        if isinstance(node, ast.If) and isinstance(node.test, ast.Name):
-            (stmt,) = node.body
-            dispatches.append((node.test.id, [value(a) for a in stmt.value.args[1:]]))
+    for flag, _, args in F.dispatches(ns):
+        if flag in ALSO_PASSES:
+            args = [*args, ns[ALSO_PASSES[flag]]]
+        dispatches.append((flag, args))
     return ns, dispatches
 
 
@@ -74,7 +70,7 @@ DEAD_KEYS = {
 
 def _expected_step(step, args):
     """(R.<step>(...) from the runner's own dicts, {slot: runner keys with no keyword})."""
-    if step == "modified_ramsey_control":  # the live runner also passes ModifiedRamsey_params
+    if step == "modified_ramsey_control":  # the runner also passes ModifiedRamsey_params
         own, ramsey = args
         kw, own_ignored = F._kwargs(R.LEGACY_KEYS[step]["ModifiedRamsey_Control_params"], own)
         mr, mr_ignored = F._kwargs(
@@ -101,6 +97,16 @@ def _carries(got, raw, dead, where):
         else:
             assert got[key] == value, f"{where}.{key}"
             assert type(got[key]) is type(value), f"{where}.{key}"
+
+
+def test_post_freeze_changes_are_real_changes():
+    """Every POST_FREEZE / ALSO_PASSES entry differs from the frozen text (no stale entries)."""
+    frozen = F.namespace()
+    for name, key, value in POST_FREEZE:
+        assert key not in frozen[name] or frozen[name][key] != value, (name, key)
+    args_of = {flag: args for flag, _, args in F.dispatches(frozen)}
+    for flag, name in ALSO_PASSES.items():
+        assert all(a is not frozen[name] for a in args_of[flag]), flag
 
 
 def test_session_is_the_runner_selection():
