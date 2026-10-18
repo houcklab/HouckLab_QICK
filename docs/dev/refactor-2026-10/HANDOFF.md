@@ -248,13 +248,29 @@ F57, F58.
     (start_ts_gain / end_ts_gain / ts_step; build_context still accepts ts and ignores it); allowlist in
     tests/regression/README.md 'Allowed cfg diffs'; symbol-map row for the runner's ts -> deleted 3b (golden: 2668 leaves,
     all the four keys in cfg / config digests / cfg_digest; hw, sets, cfg_access, yoko_writes, outcome identical).
+61. `82ab72a8` feat(core): 5a — core/device.py (frozen Device/Qubit/Readout/ReadoutWindow/ParityParams/Setup/TwpaSetup;
+    legacy_parameters() byte-identical; validate with Nyquist/image checks), devices/CSTQ03.py (+ archive README),
+    runs/groups.py + runs/recipes.py (G.<group>, R.<step> for all 30 canonical steps, qicklab.runs.STEPS; precedence
+    library < Qubit attribute < session group < step keyword; symmetric MR without f_upper raises), core/session.py
+    (Session / Step / connect / run / run_step, regime switching as the legacy helpers, config-object guard, dry_run on
+    core/fakes.py, record_calibration + calibrations.jsonl), tests/regression/driver_plan.py reproducing all 43 labels
+    (test_golden runs both drivers; only driver_qicklab writes), runners/CSTQ03_session.py, tests/test_layering.py,
+    fixtures/cstq03_legacy_params.py (golden byte-identical, compare mode 1987 passed under both drivers). Decisions
+    recorded for the user: recipe defaults that design.md called device-dependent but the Device model cannot hold
+    (search voltage windows 0-10 mV, search-spec gains 700/500) stay library values = the CSTQ03 runner's
+    (R.LIBRARY_DEVICE_VALUES); qicklab/__init__.py stays empty (design.md line 29 amended); calibration write-back wired
+    only for transmission_fit / transmission_sweep / zero_span_parity (the others' run_* return nothing). Known:
+    run_interleaved_coherence's nothing-enabled early return leaves regime B (design.md known bugs; guarded in
+    run_step); charge_dispersion_ramsey KeyError('df') with CSTQ03 values; dry-run guard thresholds 40/200 heuristic;
+    projected_histogram_snr function-local import exempted in test_layering.
 TIER A IS COMPLETE. Next: tier B in batches (plan: scratchpad tierB_plan.md of session 3 -> copied below), then the
 dead-cfg-key commit, 5a, 5b, 6, docs rewrite, merge back.
 Tier-B batches (one workflow, one regeneration, one commit each): B1 F51 F52 F84 | B2 F29 F65 F78 F83 F68+F79 F66 F82 |
 B3 F35 F64 | B4 F59 F60 F61 F62 F63 | B5 F36 F37 F69 F70 F71 | B6 F32 F43 F44 F45 F73 F74 F75 F76 |
 B7 F30 F31 F38 F39 F40 F41 F42 F72 | B8 F77 F80 F81 | B9 F54 F55 | B10 F46 alone. Skip F47 (= F21+F53).
-Landed: B1-B10 (items 50-59) and the dead-cfg-key commit (60). Next: 5a (brief + workflow in the session scratchpad:
-brief_5a.md, workflow_phase5a.js), 5b, 6, docs rewrite, merge back.
+Landed: tier B (50-59), dead-cfg-key (60), 5a (61). Next: 5b (brief_5b.md in the session scratchpad, run through
+workflow_phase5a.js as one slice), 6 (parameter registry + generated parameters.md), docs rewrite (CLAUDE.md / AGENTS.md /
+README), merge back.
 Phase-5a inputs, not commits now: F49, F50 (Device.validate), F56, F57, F58.
 ALL EIGHT PARKED ITEMS ARE LANDED (39-46). `qicklab_refactor_wip` is deleted; the per-item table in TRANSFER STATE is
 historical. Pushed to origin after 46.
