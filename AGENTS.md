@@ -1,143 +1,120 @@
-# AGENTS.md
+# AGENTS.md: guidance for Codex working in this repository
 
-This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
+History and decisions of the 2026-10 refactor: `docs/dev/refactor-2026-10/HANDOFF.md` (a record, not a prerequisite).
 
-## Overview
+## What this repo is
 
-HouckLab_QICK is the Houck Lab's RFSoC control framework for superconducting qubit experiments. It is built on top of the open-source QICK (Quantum Instruction Control Kit), which runs on Xilinx RFSoC PYNQ boards. Per the README: "This is the repository for the Houck lab RFSOC code."
+`qicklab` is the Houck Lab QM-team package for measuring superconducting qubits with a Xilinx
+RFSoC running QICK (tProc v1, client `qick==0.2.334`); the production chip is CSTQ03. A device
+file holds one chip's measured numbers, a `Session` picks the qubits, the bias and the shared
+settings, and a `PLAN` is an ordered list of steps (`R.t1()`, `R.single_shot()`, ...) that `run()`
+executes. Each step wraps an experiment class that compiles a tProc program, acquires, fits,
+plots and saves `.h5` + `.png` + `.json`. User docs start at `docs/README.md`, developer docs at
+`docs/architecture.md`; where code and docs disagree, the code wins. Active topic: zero-span
+charge-parity switching (`docs/experiments/zero_span_parity.md`).
 
-## Repository Layout
+## Layout
 
 ```
-HouckLab_QICK/
-├── MasterProject/Client_modules/     # THE central shared library — everything imports from here
-│   ├── CoreLib/                      # ExperimentClass, MakeFile (h5py wrapper), socProxy
-│   ├── Init/initialize.py            # Template: BaseConfig + attenuator/yoko setup
-│   ├── PythonDrivers/                # YOKOGS200, control_atten (DLL), SPIRack drivers
-│   ├── Helpers/                      # Shared analysis utilities
-│   ├── Experiments/                  # Shared experiment implementations
-│   ├── Runners/                      # Top-level scripts (RunRabiAmp_ND, RunSpecSlice)
-│   └── LAKE_GUI/                     # PyQt5 GUI for live experiment control
-├── WorkingProjects/                  # Per-hardware-setup workspaces
-│   ├── QM_Team/qubit_measurements/   # General qubit characterization (+ JeroCode subworkspace)
-│   ├── Inductive_Coupler/            # Inductive coupler experiments (MUX variants)
-│   ├── Tantalum_fluxonium/           # Tantalum fluxonium qubits
-│   ├── Tantalum_fluxonium_escher/    # Escher chip
-│   ├── Tantalum_fluxonium_marvin/    # Marvin chip
-│   └── Switch_SetupTesting/          # RF switch testing
-├── Archive/                          # Legacy projects (Basil, Protomon, q4diamond)
-└── README                            # One-line repo description
+qicklab/              the package; layers in import order, lowest first
+  hardware/           rfsoc (Pyro4 proxy), board (BASE_CONFIG), yoko, attenuator, sc5510a, pnax, synthhd
+  core/               ExperimentClass, device, session, params (registry), config, context, io, fakes
+  analysis/           offline fits, IQ processing, parity classifiers (never imports qick)
+  experiments/        one module per family: QICK program + ExperimentClass subclass
+  runs/               run_* (one per step), groups.py (G, session groups), recipes.py (R, STEPS)
+  twpa/               standalone TWPA bias / pump / sweep scripts
+devices/              <NAME>.py: one frozen DEVICE per chip and cooldown; archive/ for past cooldowns
+runners/              <device>_session.py: SESSION, STEP, PLAN (the file a researcher edits)
+scripts/gen_docs.py   parameter registry -> docs/parameters.md and the step pages' recipe tables
+tests/                regression/ (golden), refactor/ (equivalence gate), test_*.py, hardware/
+docs/                 user and developer docs; dev/refactor-2026-10/ is the refactor record
+pyproject.toml        dependencies (qick pin), ruff and pytest configuration
 ```
 
-Each WorkingProject mirrors the MasterProject layout (Client_modules with CoreLib/Experiments/Helpers/PythonDrivers) but contains setup-specific code. Newer projects increasingly import from MasterProject rather than duplicating.
+## Tests and what each family proves
 
-## Core Architecture
+From the repo root with `.venv` active (`PYTHONUTF8=1` on a Windows console). No hardware needed.
 
-### Connection to Hardware (Pyro4 over network)
-
-`MasterProject/Client_modules/CoreLib/socProxy.py` defines `makeProxy()`, which connects to a QICK server running on a Pyro4 nameserver. Default endpoint is `192.168.1.7:8888`, server name `myqick`. Returns `(soc, soccfg)` — the QickSoc proxy and config used throughout experiments.
-
-### Experiment Layer (two-class pattern)
-
-Every experiment has two cooperating classes:
-
-1. **A QICK Program** subclassing `RAveragerProgram` / `AveragerProgram` / `NDAveragerProgram` from `qick`. Implements `initialize()` (pulse setup, register declarations) and `body()` (gate sequence). Generated code runs on the RFSoC tProc.
-
-2. **An ExperimentClass subclass** (from `MasterProject/Client_modules/CoreLib/Experiment.py`) wrapping the QICK program for orchestration: configuring sweeps, calling `acquire()`, saving HDF5/JSON/PNG to timestamped paths, and plotting.
-
-`ExperimentClass.__init__` auto-creates a dated subfolder under `outerFolder + path` and prepares three filenames per run: `.h5` (data), `.png` (plot), `.json` (config).
-
-### Configuration (cfg dict)
-
-All measurement parameters flow through a single `cfg` dict. Hardware-level defaults live in `MasterProject/Client_modules/Init/initialize.py` as `BaseConfig` (channel assignments, ADC offsets, nyquist zones). Runners build on `BaseConfig` with experiment-specific `UpdateConfig` overrides.
-
-Common keys: `res_ch`, `qubit_ch`, `ro_chs`, `nqz`, `qubit_nqz`, `reps`, `relax_delay`, `read_length`, `read_pulse_freq`, `read_pulse_gain`, `qubit_freq`, `sigma`, `flat_top_length`, `adc_trig_offset`.
-
-### Runners (top-level entry points)
-
-`MasterProject/Client_modules/Runners/Run*.py` are the actual scripts a user executes. Each Runner:
-1. Sets `outerFolder` (often a network path like `Z:\TantalumFluxonium\Data\...`)
-2. Calls `makeProxy()` once to grab `soc, soccfg`
-3. Instantiates instruments (YOKOGS200 over GPIB, attenuators over USB DLL)
-4. Defines an `UpdateConfig` dict and merges into `BaseConfig`
-5. Instantiates and runs experiment classes, often in loops
-
-### LAKE_GUI (interactive frontend)
-
-`MasterProject/Client_modules/LAKE_GUI/LAKE_GUI.py` is a PyQt5 app that wraps experiments for interactive use. `ExperimentThread` runs measurements off the UI thread; `PlotWidget` and `QDictEdit` handle live plots and parameter editing. There is also a `Quarky_GUI` (separate, in MasterProject) — distinct from LAKE_GUI.
-
-### Hardware Driver Quirks
-
-`PythonDrivers/control_atten.py` loads `VNX_atten64.dll` (Vaunix variable attenuators). Calling code must register the DLL directory before import:
-
-```python
-os.add_dll_directory(os.path.dirname(path) + '\\PythonDrivers')
+```
+python -m compileall -q qicklab devices runners tests
+ruff check --select F qicklab runners tests devices      # the lint gate; ruff format what you touch
+python -m pytest tests/test_imports.py tests/test_layering.py tests/test_program_timing.py
+python -m pytest tests                                   # everything, incl. the golden (~14 min)
+python -m pytest tests/regression                        # golden only, both drivers (~30 min on a 16 GB PC; ~15 min per driver with REGRESSION_DRIVERS=qicklab or =plan)
+REGRESSION_LABELS=RunT1 REGRESSION_VARIANTS=A python -m pytest tests/regression
+python docs/dev/refactor-2026-10/tools/diff_labels.py RunT1 --variants A   # leaf diff vs golden
+python scripts/gen_docs.py --check                       # generated docs up to date?
 ```
 
-This pattern appears at the top of nearly every Runner and the LAKE_GUI entry point. If you write a new top-level script, replicate it.
+- `tests/regression/`: `golden_cstq03.json` fingerprints, per run label and synthetic board (A,
+  B), every tProc program, cfg dict, yoko write and saved-data digest. `driver_qicklab.py` replays
+  the labels through the legacy call shapes (`build_context`, `run_*`) and is the only writer;
+  `driver_plan.py` replays them through `Session` + PLAN and only compares. `REGRESSION_UPDATE=1`
+  rewrites the golden (only the selected labels / variants). See `tests/regression/README.md`.
+- `tests/refactor/`: equivalence gate of the move out of the legacy tree (commit `0f0a51f`).
+  `symbol_map.py` maps every legacy top-level statement to its new home; the checker proves the
+  bodies identical. A frozen record: change it only with a row the commit justifies.
+- `tests/test_program_timing.py`: pinned tProc schedule and readout-window integers, both boards.
+- `tests/test_layering.py`: the layering rule below, checked on the source.
+- `tests/test_params_registry.py`: every cfg key, recipe / group keyword and device field is in
+  `qicklab/core/params.py`, cross-checked against the code and the golden.
+- `tests/test_gen_docs.py`: `scripts/gen_docs.py` is idempotent on the committed docs; rerun it
+  after changing the registry, a recipe, a group or the device model.
+- `tests/test_agent_docs.py`: CLAUDE.md = AGENTS.md below line 1; paths quoted here and in README exist.
+- the other `tests/test_*.py`: unit tests (fits, analysis, recipes, session, device, save formats);
+  `tests/hardware/` holds hardware-in-the-loop scripts, run by hand on the lab network only.
 
-## Common Experiment Families
+## Rules
 
-Files follow a `m<Name>.py` naming convention. Recurring families:
-- **Transmission** (`mTransmission`, `mTransmissionFF`, `mTransVsGain`, `mTransmissionFFMUX`): Resonator/readout characterization
-- **Spectroscopy** (`mSpecSlice`, `mSpecSliceFF`, `mSpecVsFlux`, `mSpecSliceFFMUX`): Qubit frequency hunting
-- **Rabi** (`mAmplitudeRabi`, `mAmplitudeRabiFF`, `mAmplitudeRabi_Blob`, `mRabiOscillations*`): Drive amplitude calibration
-- **Coherence** (`mT1`, `mT2Experiment`, `mT2EchoExperiment`, `mT1MUX`): T1/T2/Echo decay times
-- **Single-Shot** (`mSingleShotProgram`, `mSingleShot_2Dsweep`, `mSingleShotPS`): Readout discrimination
-- **Optimization** (`mReadOpt_wSingleShot`, `mOptimizeReadoutandPulse_FFMUX`): Joint readout/pulse tuning
-- **Benchmarking** (`mRB`, `mSingleQubitRB`): Randomized benchmarking
-- **Stark** (`mACStarkShift`): AC Stark calibration
-- **Auto** (`mAutoCoherence`): Automated T1/T2 collection loop
+- The golden stays byte-identical. A commit that changes it justifies every changed leaf class in
+  its message (`docs/dev/refactor-2026-10/tools/classify_golden.py` lists them). Never edit the
+  golden or `tests/regression/fixtures/` by hand; set `REGRESSION_UPDATE` only in such a commit.
+- Bug fixes are separate commits, one bug each, never mixed with a refactor.
+- Experiment class names, cfg key names (`Read_Indeces`, `qubit_gain`, ...) and data paths
+  (`outerFolder + path`, timestamp formats) stay unchanged; `build_context` / `run_*` keep working.
+- `qick==0.2.334` exactly: the golden stores `qick.get_version()`; never regenerate it on another.
+- 16 GB PC: one golden capture at a time (pytest of the regression tests, a driver, diff_labels).
+- No hardware access at import time.
+- No AI attribution trailers in commit messages (no Co-Authored-By, no session link): 2026-10-15.
 
-### Suffix conventions
-- **FF** = Fast Flux variant (adds a flux pulse channel for tuneable qubits)
-- **MUX** = Multiplexed readout (multiple resonators on one ADC channel)
-- **SS** = Single-Shot (returns IQ point clouds instead of averaged values)
-- **_HigherLevels** = Drives `|2⟩` or `|3⟩` (qutrit/ququart experiments)
-- **PS** = Post-Selection (heralded readout)
+## Layering
 
-## Development Notes
+`hardware < core < analysis < experiments < runs < twpa`: a module imports only its own layer or a
+lower one. `analysis` never imports qick; no function-local project imports; `qicklab/__init__.py`
+is empty; device files import only `qicklab.core.device`. Enforced by `tests/test_layering.py`.
 
-### Python environment
+## Running a session
 
-The project has no `setup.py` or `requirements.txt` at the repo root in the `bfc_code` branch. The interpreter is `.venv\` (Python virtual environment, Windows). Key packages: `qick`, `numpy`, `scipy`, `matplotlib`, `h5py`, `pandas`, `tqdm`, `PyQt5`, `Pyro4`, `pyvisa`. The `.venv\Lib\site-packages\qick\` directory contains the installed QICK library.
+`runners/CSTQ03_session.py` builds `SESSION = Session(DEVICE, qubit_readout=..., qubit_pulse=...,
+bias_v=...)`, a `STEP` dict of recipes and `PLAN = [...]`. `run(SESSION, PLAN)` connects (RFSoC over
+Pyro4, charge yoko), validates the device against the board and runs the steps in order.
+`run(SESSION, plan, dry_run=True)` (`--dry-run`) compiles every program against the fakes in
+`qicklab/core/fakes.py`, saves to a temp folder and plays nothing. Dry-run a short plan: the
+committed PLAN (10^6-shot `undriven_single_shot`, `repeat=10000`) takes ~12 min to hit the guard.
+Guides: `docs/running_a_session.md`, `docs/parameters.md` (every knob, units, defaults).
 
-### Running an experiment
+## Adding a device
 
-There is no build step, lint config, or test command. A measurement run is:
+Copy `devices/CSTQ03.py` to `devices/<NAME>.py` (one `DEVICE`) and the session runner to
+`runners/<NAME>_session.py`, then dry-run a plan. Measured values are recorded with
+`qicklab.core.io.record_calibration` (appends a line to the qubit's `calibrations.jsonl` and prints
+a paste-ready `Qubit(...)`). At the end of a cooldown, copy the file into `devices/archive/` before
+editing it. Guide: `docs/adding_a_device.md`.
 
-1. Activate `.venv`
-2. Ensure the RFSoC server is reachable at `192.168.1.7` (the Pyro4 nameserver)
-3. Edit or copy a Runner script under `MasterProject/Client_modules/Runners/` (or a project-local equivalent)
-4. Update `outerFolder` to the data destination and `UpdateConfig` to the measurement parameters
-5. Execute the script directly (`python Runners/RunRabiAmp_ND.py`) or run via LAKE_GUI
+## Physics conventions to preserve
 
-There is no automated test framework — `TestExperiment.py` files contain manually-run smoke checks against actual hardware.
+- Register values come from the QICK helpers (`freq2reg`, `us2cycles`, `deg2reg`), never by hand.
+- Gaussian envelopes are 4 sigma long (`add_gauss(..., length=4 * sigma)`, in cycles).
+- The resonator tone covers the ADC window, `length = adc_trig_offset + readout_length`
+  (`qicklab.core.readout.cover_readout_window`); see `docs/concepts/readout_window.md`.
+- Symmetric Modified Ramsey (`symmetric_ramsey=True`) drives midway between the parity branches,
+  at f_ge - df/2, f_ge the UPPER branch. `R.modified_ramsey` raises without `f_upper_mhz` (in
+  `ParityParams`) or `f_ge=`; legacy `run_modified_ramsey` still defaults f_ge to the qubit centre.
+- Units: MHz, us, DAC units 0..32767 unless noted (`docs/concepts/timing_and_units.md`).
 
-### Conventions to preserve
+## History and branch state
 
-- **Don't compute frequency-to-register values manually.** Use QICK helpers (`freq2reg`, `us2cycles`, `deg2reg`) so values round-trip correctly with the firmware.
-- **Pulse envelope length must be ≥ 4× sigma** for Gaussian pulses — this is hardcoded into `add_gauss(..., length=us2cycles(sigma)*4)` throughout the experiments.
-- **Don't refactor across `WorkingProjects/*/`.** Each project workspace is owned by one researcher / setup and may have drifted intentionally from MasterProject. When in doubt, ask before pushing shared changes upward.
-- **Don't edit `Archive/`.** Treated as historical record.
-- **DLL path setup is load-bearing.** Removing the `os.add_dll_directory` lines breaks attenuator control silently.
-
-### Branch context
-
-- Main branch: `main`
-- Active branch (per current checkout): `bfc_code` — BFC (Broadband Flux Control) experiment development. Recent commits add `mRB.py`, `mACStarkShift.py`, and extend `mAmplitudeRabiFF.py`, `mTransmissionFF.py`, `LFTM01_BFC.py`, `CSTQ02_BFC.py`, and `utils.py`.
-- Branch names typically encode the chip/setup or measurement target (e.g., `QM_Team`, `bfc_code`).
-
-### Current user scope (IMPORTANT)
-
-The user is working **exclusively on BFC code** inside `WorkingProjects/QM_Team/qubit_measurements/Client_modules/Experiments/`. Their previous measurements ran out of `CSTQ02_BFC.py` in that directory, which orchestrates all involved measurements for that chip. Next devices in pipeline: **test_BTQ_BFC** (test device, first target, being prepared) → **CSTQ03** (production target). New per-device orchestrators (e.g. `test_BTQ_BFC.py`) follow the existing `CSTQ02_BFC.py` pattern.
-
-**Edit scope rule:** Edit files only inside `WorkingProjects/QM_Team/qubit_measurements/Client_modules/Experiments/` (and helper files at the same level the user opens) without asking. **Ask before editing anything upward** of this directory — including `MasterProject/`, `CoreLib/`, sibling `WorkingProjects/`, or shared helpers — even if a change there would be cleaner. Those files are shared across setups and researchers and may not be safe to modify without coordination.
-
-### Active measurement
-
-Zero-span two-tone charge-parity-switching measurement, designed 2026-05-16. Designs v1 (rep-based "strobe", ~10–30 μs/sample, unbounded record) and v2 (`acquire_decimated()`, sub-μs/sample). New files: device-agnostic `mZeroSpanParity.py` + `analyze_ZeroSpanParity.py`, per-device orchestrator `test_BTQ_BFC.py`. Implementation can proceed up to the RFSoC loopback test without hardware; physics validation is blocked on test_BTQ_BFC cooldown + characterization. Coherence times (T1/T2/T2E) are measured on every new device as a standard benchmark before running specialized measurements.
-
-### Gitignored areas
-
-`/__pycache__/`, `*.iml`, `*.pyc`, `/.idea/`, and several `WorkingProjects/QM_Team/resonator_measurements/` subdirectories (FPGA build artifacts: `bd/`, `ip/`, `xdc/`, `pynq/`, `hdl/`, `proj.tcl`, `dBm_lookup`).
+- `docs/dev/refactor-2026-10/`: `HANDOFF.md` (commit log, decisions), `design.md` (spec), audits
+  in `docs/dev/refactor-2026-10/audit/`, review findings in `docs/dev/refactor-2026-10/review/findings.json`.
+- Branch `qicklab_refactor` (from `bfc_code` at `0f0a51f`), to be fast-forwarded into `bfc_code`.
+  `main` is the lab's older tree (none of it is here); legacy code: `git show 0f0a51f:<path>`.

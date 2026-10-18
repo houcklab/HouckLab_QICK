@@ -6,7 +6,7 @@ can be checked against the pre-refactor code without a fridge, a board or a
 yoko.
 
 ```
-python -m pytest tests/regression                                   # compare against the golden, both drivers (~20 min)
+python -m pytest tests/regression                                   # compare against the golden, both drivers (~30 min on a 16 GB PC, ~15 min per driver)
 REGRESSION_DRIVERS=plan python -m pytest tests/regression           # only the Session/PLAN driver (qicklab: only the legacy-shape one)
 REGRESSION_LABELS=RunT1,RunT2 python -m pytest tests/regression     # just some runs
 REGRESSION_VARIANTS=A python -m pytest tests/regression             # just one board variant

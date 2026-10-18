@@ -10,7 +10,7 @@ Where code and a page disagree, the code wins and the page needs a fix. The para
 
 Work through 1-9 once. After that, use 10-14 as reference. 15 is for people who change the code.
 
-1. **Quickstart** (page not written yet; until then use [the session file](running_a_session.md#the-session-file) and [Running](running_a_session.md#running)): write a three-step plan, run it with `dry_run=True` (every program compiles against fake hardware, nothing plays), then run it on the board.
+1. **Quickstart** ([the quick start in the top-level README](../README.md#quick-start), then [the session file](running_a_session.md#the-session-file) and [Running](running_a_session.md#running)): write a short plan, run it with `dry_run=True` (every program compiles against fake hardware, nothing plays), then run it on the board.
 2. **[Config regimes](concepts/config_regimes.md)**: why every step sees one of two config dicts, what is lost when the plan switches between them, and why `qubit_gain` means two different things.
 3. **[Readout window](concepts/readout_window.md)**: `length = adc_trig_offset + readout_length`, the three separate windows, SNR vs T1, clock rounding.
 4. **[Averaging](concepts/averaging.md)**: `reps`, `rounds`, `shots`, `soft_avgs`, `repetitions`, `repeat`, `num_cycles`, `cycles`; why to prefer `reps`.

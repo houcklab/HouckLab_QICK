@@ -73,7 +73,7 @@ Run it from the repo root (or PyCharm with the repo root as sources root). The l
 repetition counts make some `STEP` entries long even in a dry run: `t1`, `t2_echo` and
 `modified_ramsey` stop at the dry-run guard (`INCOMPLETE`), and the default
 `STEP["undriven_single_shot"]` (10^6 shots, `repeat=10000`) analyses 41 records of a million shots
-before it stops (tens of minutes). To check a plan offline, dry-run it with shorter steps,
+before it stops (about 12 minutes). To check a plan offline, dry-run it with shorter steps,
 e.g. `R.undriven_single_shot(shots=10_000)`. The effective
 parameters printed for each step are equivalent to those the legacy runner passed for the same
 flag, not a copy of its dicts: every key the run reads has the runner's value, the run's own
