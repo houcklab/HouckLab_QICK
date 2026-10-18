@@ -263,14 +263,18 @@ F57, F58.
     run_interleaved_coherence's nothing-enabled early return leaves regime B (design.md known bugs; guarded in
     run_step); charge_dispersion_ramsey KeyError('df') with CSTQ03 values; dry-run guard thresholds 40/200 heuristic;
     projected_histogram_snr function-local import exempted in test_layering.
+62. `a9c95a68` refactor: 5b — runners/CSTQ03_BFC.py and tests/regression/driver_legacy.py deleted; devices/archive/CSTQ03_v2b.py
+    (v2b table as a Device, every runner note kept); test_session_runner re-pointed at the frozen fixture + POST_FREEZE; the
+    122 Runners.CSTQ03_BFC symbol-map rows 'deleted' 3b; LAYOUT_MODULES runners.CSTQ03_session; pyproject ignore dropped
+    (golden byte-identical, compare mode under both drivers). qicklab.runs.__all__ kept: driver_qicklab.star_namespace
+    consumes it.
 TIER A IS COMPLETE. Next: tier B in batches (plan: scratchpad tierB_plan.md of session 3 -> copied below), then the
 dead-cfg-key commit, 5a, 5b, 6, docs rewrite, merge back.
 Tier-B batches (one workflow, one regeneration, one commit each): B1 F51 F52 F84 | B2 F29 F65 F78 F83 F68+F79 F66 F82 |
 B3 F35 F64 | B4 F59 F60 F61 F62 F63 | B5 F36 F37 F69 F70 F71 | B6 F32 F43 F44 F45 F73 F74 F75 F76 |
 B7 F30 F31 F38 F39 F40 F41 F42 F72 | B8 F77 F80 F81 | B9 F54 F55 | B10 F46 alone. Skip F47 (= F21+F53).
-Landed: tier B (50-59), dead-cfg-key (60), 5a (61). Next: 5b (brief_5b.md in the session scratchpad, run through
-workflow_phase5a.js as one slice), 6 (parameter registry + generated parameters.md), docs rewrite (CLAUDE.md / AGENTS.md /
-README), merge back.
+Landed: tier B (50-59), dead-cfg-key (60), 5a (61), 5b (62). Next: 6 (brief_6.md in the session scratchpad, run through
+workflow_phase5a.js), docs rewrite (brief_docs.md), merge back (bfc_code at 0f0a51f2 is still an ancestor: fast-forward).
 Phase-5a inputs, not commits now: F49, F50 (Device.validate), F56, F57, F58.
 ALL EIGHT PARKED ITEMS ARE LANDED (39-46). `qicklab_refactor_wip` is deleted; the per-item table in TRANSFER STATE is
 historical. Pushed to origin after 46.
