@@ -278,14 +278,21 @@ F57, F58.
     an acceptance bound (it is the Strategy-A trigger); ZSP provenance keys on unreached branches unregistered; unit /
     meaning guesses marked in the registry notes; RunChargeDispersionRamsey KeyError('df') (known bug) keeps
     ChargeDispersion unreached.
+64. `ebbd9bbc` docs: CLAUDE.md / AGENTS.md (120 lines, identical below line 1, tests/test_agent_docs.py) / README.md rewritten
+    for the repo as it is; the legacy layout, LAKE_GUI, the WorkingProjects scope rule and the refactor banner removed; the
+    symmetric-MR convention states the recipe-vs-legacy f_ge difference (golden untouched).
+THE PLAN IS COMPLETE through the docs rewrite. Remaining: the merge back into bfc_code (End state below) after the user
+has seen the commit list and the test summary; then the lab-PC check against the original Windows golden
+(`git show ed66820e:tests/regression/golden_cstq03.json`). Candidate follow-up commits (user approval first): the
+interleave early return, RunChargeDispersionRamsey KeyError('df'), legacy run_modified_ramsey f_ge fallback,
+save_config's open datafile() handle, connect(session) rfsoc_timeout_s, the F43 n_chunks default decision.
 TIER A IS COMPLETE. Next: tier B in batches (plan: scratchpad tierB_plan.md of session 3 -> copied below), then the
 dead-cfg-key commit, 5a, 5b, 6, docs rewrite, merge back.
 Tier-B batches (one workflow, one regeneration, one commit each): B1 F51 F52 F84 | B2 F29 F65 F78 F83 F68+F79 F66 F82 |
 B3 F35 F64 | B4 F59 F60 F61 F62 F63 | B5 F36 F37 F69 F70 F71 | B6 F32 F43 F44 F45 F73 F74 F75 F76 |
 B7 F30 F31 F38 F39 F40 F41 F42 F72 | B8 F77 F80 F81 | B9 F54 F55 | B10 F46 alone. Skip F47 (= F21+F53).
-Landed: tier B (50-59), dead-cfg-key (60), 5a (61), 5b (62), 6 (63). Next: docs rewrite of CLAUDE.md / AGENTS.md /
-README (brief_docs.md), then merge back (bfc_code at 0f0a51f2 is still an ancestor: fast-forward after showing the user
-the commit list and test summary). The low-memory reaper on this PC kills background captures when other apps hold
+Landed: tier B (50-59), dead-cfg-key (60), 5a (61), 5b (62), 6 (63), docs rewrite (64). Next: merge back (bfc_code at
+0f0a51f2 is still an ancestor: fast-forward after showing the user the commit list and test summary). The low-memory reaper on this PC kills background captures when other apps hold
 the RAM: run the suite as three passes (tests/regression with REGRESSION_DRIVERS=qicklab, then =plan, then the rest).
 Phase-5a inputs, not commits now: F49, F50 (Device.validate), F56, F57, F58.
 ALL EIGHT PARKED ITEMS ARE LANDED (39-46). `qicklab_refactor_wip` is deleted; the per-item table in TRANSFER STATE is
