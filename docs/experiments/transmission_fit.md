@@ -1,5 +1,7 @@
 # transmission_fit
 
+Recipe: `R.transmission_fit(...)` (`qicklab.runs.recipes`; every keyword with its default and unit is in the docstring, `help(R.transmission_fit)`). Session groups: [step table](../running_a_session.md#steps). Generated parameter tables come in phase 6.
+
 Class `CavitySpecFF` (see `qicklab.experiments.transmission`), hanger fit in
 `qicklab.analysis.fitting`. Regime **A**.
 
@@ -42,7 +44,7 @@ PLAN = [R.transmission_fit(reps=400, rounds=1)]     # same shots, 20x fewer prog
 ```
 
 Span and number of points come from the session `transmission` group
-(`Session(transmission=R.transmission(span=5, num_points=201))`), because they are baked
+(`Session(transmission=G.transmission(span=5, num_points=201))`), because they are baked
 into the regime-A base config.
 
 ## Parameters

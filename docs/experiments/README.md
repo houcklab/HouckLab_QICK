@@ -7,6 +7,8 @@ see, what they save and what they hand to later steps.
 - New to the code base: read [running_a_session.md](../running_a_session.md) first, then
   the page of the step you want to run.
 - Changing three numbers before a run: jump to the **Parameters** table of the step.
+- Each step page opens with a **Recipe** line naming its `R.<step>` function; the CSTQ03
+  values of every step are in `runners/CSTQ03_session.py` (`STEP[...]`).
 - Every parameter with units and defaults will also be in `docs/parameters.md`, generated
   from the parameter registry (refactor phase 6; not present yet).
 
@@ -15,6 +17,7 @@ see, what they save and what they hand to later steps.
 ```python
 from devices.CSTQ03 import DEVICE
 from qicklab.core.session import Session, run
+from qicklab.runs import groups as G
 from qicklab.runs import recipes as R
 
 SESSION = Session(DEVICE, qubit_readout=5, qubit_pulse=5)
@@ -31,7 +34,7 @@ run(SESSION, PLAN)                 # run(SESSION, PLAN, dry_run=True) compiles e
 
 The snippets on the experiment pages show only the `PLAN` lines; imports and `SESSION` are
 as above. Values resolve as library recipe default < session group
-(`Session(coherence=R.coherence(...))`, see
+(`Session(coherence=G.coherence(...))`, see
 [shared groups](../running_a_session.md#shared-groups)) < keyword on the step. Recipe
 keywords are the snake_case form of the legacy keys in each **Parameters** table; the
 final spelling comes from the parameter registry.
@@ -76,7 +79,7 @@ consecutive steps differ in regime. Details in
 | active_reset_verify | `ActiveResetVerify` | A | Verifies the measurement-based active reset ([how reset works](active_reset.md)) | [active_reset_verify.md](active_reset_verify.md) |
 | single_shot | `SingleShotProgramFFMUX` | B | g/e IQ clouds, threshold, readout contrast | [single_shot.md](single_shot.md) |
 | undriven_single_shot | `UndrivenSingleShot` | B | IQ clouds and switching with no qubit drive | [undriven_single_shot.md](undriven_single_shot.md) |
-| t1_ss | `T1_SS` | B | Single-shot (thresholded) T1 | [t1_single_shot.md](t1_single_shot.md) |
+| t1_single_shot | `T1_SS` | B | Single-shot (thresholded) T1 | [t1_single_shot.md](t1_single_shot.md) |
 | readout_optimize | `ReadOpt_wSingleShotFF` | B | Readout gain x frequency map | [readout_optimize.md](readout_optimize.md) |
 | qubit_optimize | `QubitPulseOpt_wSingleShotFF` | B | Qubit gain x frequency map | [qubit_optimize.md](qubit_optimize.md) |
 | auto_coherence | `QubitSpecSliceFF`, `AmplitudeRabiFF`, `SingleShotProgramFFMUX`, `T1FF`, `T2R`, `T2EMUX` | B | Automated calibration, then T1/T2R/T2E | [auto_coherence.md](auto_coherence.md) |

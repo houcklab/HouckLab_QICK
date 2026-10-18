@@ -1,5 +1,7 @@
 # charge_dispersion: quasi-CW telegraph and fixed-wait Ramsey (ChargeDispersion, ChargeDispersionQuasiCW)
 
+Recipe: `R.two_tone_charge_dispersion_quasicw(...)`, `R.charge_dispersion_quasicw(...)`, `R.charge_dispersion_ramsey(...)` (`qicklab.runs.recipes`; every keyword with its default and unit is in the docstring, `help(R.two_tone_charge_dispersion_quasicw)`). Session groups: [step table](../running_a_session.md#steps). Generated parameter tables come in phase 6.
+
 This page covers three steps that probe charge dispersion directly. For the main
 parity-rate measurement use [modified_ramsey](modified_ramsey.md), and for the CW
 two-tone version use [zero_span_parity](zero_span_parity.md).

@@ -1,5 +1,7 @@
 # modified_ramsey_control: Modified Ramsey at the charge sweet spot (ModifiedRamsey)
 
+Recipe: `R.modified_ramsey_control(...)` (`qicklab.runs.recipes`; every keyword with its default and unit is in the docstring, `help(R.modified_ramsey_control)`). Session groups: [step table](../running_a_session.md#steps). Generated parameter tables come in phase 6.
+
 ## What it measures
 
 This step is a sweet-spot null control for charge-parity detection. At a

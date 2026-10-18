@@ -1,5 +1,7 @@
 # auto_coherence
 
+Recipe: `R.auto_coherence(...)` (`qicklab.runs.recipes`; every keyword with its default and unit is in the docstring, `help(R.auto_coherence)`). Session groups: [step table](../running_a_session.md#steps). Generated parameter tables come in phase 6.
+
 Run function `run_auto_coherence` in `qicklab.runs.auto_coherence` (sweet-spot search in
 `qicklab.runs.sweet_spot`). Uses `QubitSpecSliceFF`, `AmplitudeRabiFF`,
 `SingleShotProgramFFMUX`, `T1FF`, `T2R`, `T2EMUX`. Regime **B**.
@@ -43,9 +45,9 @@ PLAN = [R.auto_coherence(skip_sweet_spot_search=True,     # CSTQ03 session setti
                          calibrate_qubit_freq=False,
                          ss_gain_span_frac=0.6, ss_gain_pts=100,
                          auto_readout_opt=True,
-                         T1_step=5, T1_repetitions=3,
-                         T2_step=0.1, T2_expts=401, T2_repetitions=3,
-                         T2E_max_us=500, T2E_repetitions=3)]
+                         t1_step=5, t1_repetitions=3,
+                         t2_step=0.1, t2_expts=401, t2_repetitions=3,
+                         t2e_max_us=500, t2e_repetitions=3)]
 ```
 
 Any key of the parameter table can be overridden; unspecified keys keep their defaults.

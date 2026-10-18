@@ -1,5 +1,7 @@
 # qubit_optimize: single-shot qubit gain × frequency map (QubitPulseOpt_wSingleShotFF)
 
+Recipe: `R.qubit_optimize(...)` (`qicklab.runs.recipes`; every keyword with its default and unit is in the docstring, `help(R.qubit_optimize)`). Session groups: [step table](../running_a_session.md#steps). Generated parameter tables come in phase 6.
+
 ## What it measures
 
 A 2-D grid over qubit drive gain and qubit drive frequency. At every point the step

@@ -1,6 +1,8 @@
 """Measurement routines: each `run_*(ctx, params...)` is one `if RunX:` block of the legacy runner.
 
 `__all__` also re-exports the helpers runners/CSTQ03_BFC.py gets from its star import (until phase 5).
+`STEPS` (canonical step name -> recipe, from qicklab.runs.recipes) is exported but kept out of
+`__all__`, so that star import binds the same names as before.
 """
 
 from datetime import datetime
@@ -91,6 +93,7 @@ from qicklab.runs.coherence import (
 from qicklab.runs.interleave import run_interleaved_coherence
 from qicklab.runs.modified_ramsey import run_modified_ramsey, run_modified_ramsey_control
 from qicklab.runs.rabi import run_amplitude_rabi
+from qicklab.runs.recipes import STEPS as STEPS  # not in __all__ (see the docstring)
 from qicklab.runs.resonator import (
     run_chi_shift,
     run_constant_tone,

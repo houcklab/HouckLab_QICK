@@ -1,5 +1,7 @@
 # t2_echo
 
+Recipe: `R.t2_echo(...)` (`qicklab.runs.recipes`; every keyword with its default and unit is in the docstring, `help(R.t2_echo)`). Session groups: [step table](../running_a_session.md#steps). Generated parameter tables come in phase 6.
+
 Class `T2EMUX` (see `qicklab.experiments.t2_echo`). Regime **A**.
 
 ## What it measures
@@ -66,7 +68,7 @@ PLAN = [R.t2_echo()]                                    # regime A, echo group
 PLAN = [R.t2_echo(num_pi_pulses=3, t2_max_us=60)]       # CPMG-3
 ```
 
-`Session(echo=R.echo(...))` sets the shared group (also read by the combos and
+`Session(echo=G.echo(...))` sets the shared group (also read by the combos and
 interleaved_coherence).
 
 ## Parameters

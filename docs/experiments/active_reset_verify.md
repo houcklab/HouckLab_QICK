@@ -1,5 +1,7 @@
 # active_reset_verify: differential test of the hardware active reset (ActiveResetVerify)
 
+Recipe: `R.active_reset_verify(...)` (`qicklab.runs.recipes`; every keyword with its default and unit is in the docstring, `help(R.active_reset_verify)`). Session groups: [step table](../running_a_session.md#steps). Generated parameter tables come in phase 6.
+
 ## What it measures
 
 This step tests whether the [active reset](active_reset.md) actually puts the qubit

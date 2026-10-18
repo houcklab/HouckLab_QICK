@@ -1,5 +1,7 @@
 # charge_transmission_sweep: cavity transmission vs charge bias (CavitySpecFF)
 
+Recipe: `R.charge_transmission_sweep(...)` (`qicklab.runs.recipes`; every keyword with its default and unit is in the docstring, `help(R.charge_transmission_sweep)`). Session groups: [step table](../running_a_session.md#steps). Generated parameter tables come in phase 6.
+
 ## What it measures
 
 The step steps the charge-bias yoko through a voltage grid and takes a full cavity

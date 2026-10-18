@@ -4,15 +4,18 @@ How qicklab is put together, why it is layered the way it is, and the QICK/tProc
 code depends on. Read [running_a_session.md](running_a_session.md) first if you only want to
 take data; this page is for people who change the code.
 
-> Status (2026-10-13): the `qicklab_refactor` branch is mid-migration. This page describes the
-> target layout from the refactor design. Module names under `qicklab.` are final; function
-> signatures of the session layer may still move until phase 5 lands.
+> Status (2026-10-17): the `qicklab_refactor` branch is mid-migration. The session layer
+> (phase 5a: `core.device`, `core.session`, `core.fakes`, `runs.groups`, `runs.recipes`,
+> `devices/CSTQ03.py`, `runners/CSTQ03_session.py`) is in; `runners/CSTQ03_BFC.py` is deleted
+> in 5b. `core.params`, `scripts/gen_docs.py` and `docs/parameters.md` are phase 6 and not
+> present yet.
 
 ## Package layout and layering
 
 ```
 devices/        one file per chip+cooldown (Device dataclass); archive/ for old cooldowns
 runners/        <device>_session.py: the per-session script a researcher edits
+                (CSTQ03_BFC.py: the legacy flag runner, until phase 5b)
 qicklab/
   hardware/     rfsoc, board (BASE_CONFIG), yoko, attenuator, sc5510a, pnax, synthhd
   core/         experiment (ExperimentClass), device, context, config, session, params,
@@ -20,7 +23,8 @@ qicklab/
   analysis/     iq, fitting, spectroscopy, ramsey, readout, plotting, hmm, rates, dwell,
                 undriven, modified_ramsey, zero_span, zero_span_checks
   experiments/  one module per experiment family (QICK program + ExperimentClass subclass)
-  runs/         run functions (one per step), recipes.py, the STEPS registry
+  runs/         run functions (one per step); groups.py (session groups, G); recipes.py
+                (step recipes, R, and the STEPS registry)
   twpa/         standalone TWPA bias/pump/sweep scripts
 tests/          regression golden, offline tests; tests/hardware/ (not collected)
 scripts/        gen_docs.py (parameter registry -> docs/parameters.md)
@@ -43,6 +47,19 @@ Rules (enforced by `tests/test_layering.py`):
   (`from qicklab.core.session import Session, run`). Importing a leaf module must not drag in
   qick, sklearn, pyvisa and matplotlib.
 - No hardware access at import time anywhere.
+
+`devices/<NAME>.py` imports only `qicklab.core.device`. The session layer sits on top of the
+legacy call shapes: `connect()` calls `build_context(...)` and a Step calls its `run_*(ctx,
+...)` with the legacy-keyed dicts, so nothing below `runs` knows about sessions.
+
+| module | holds | notes |
+|---|---|---|
+| `qicklab/core/device.py` | frozen `Device`, `Qubit`, `Readout`, `ReadoutWindow`, `ParityParams`, `Setup`, `TwpaSetup`; `Device.folder(q)`, `.legacy_parameters()`, `.with_qubit(q, ...)`, `.window(q)`, `.validate(soccfg)` | `legacy_parameters()` is the old `Qubit_Parameters` dict that `build_context` reads |
+| `qicklab/core/session.py` | `Session`, `Step`, `run`, `connect`, `run_step`; regime switching (A -> B rebuild, B -> A restore); calibration hooks; the dry run | the group names are here (`GROUPS`); their library defaults are registered by `runs.groups`, since core cannot import runs |
+| `qicklab/core/fakes.py` | `FakeSoc`, `FakeSocCfg`, `FakeYoko`, `STATE`, `set_board` | used by `run(..., dry_run=True)` and by the regression harness (`tests/regression/capture.py` re-exports them) |
+| `qicklab/runs/groups.py` (`G`) | one keyword-only builder per session group (`G.coherence(...)`, ...), `KEYS`, `resolve` | returns the legacy dict (`T1T2_params`, ...) |
+| `qicklab/runs/recipes.py` (`R`) | one keyword-only recipe per canonical step, `STEPS`, `LEGACY_KEYS`, `FROZEN_DIFFERENCES` | a recipe returns a `Step` whose `params` are the legacy-keyed dicts its `run_*` reads |
+| `runners/<device>_session.py` | `SESSION`, `STEP` (the device's step values), `PLAN` | see [running_a_session.md](running_a_session.md#the-cstq03-session-runner) |
 
 Why: the legacy tree star-imported everything (`from runs import *` pulled ~110 names,
 including `np`, `plt`, every experiment class and helper functions whose names collided with
@@ -197,19 +214,20 @@ call site that names a parent class keeps calling that class's methods.
 
 ```
 hardware/board.py BASE_CONFIG      channel wiring, nqz, trig_*, cavity_winding_*, defaults
-        |  merged with Device.setup.board_overrides
+        |  (Device.setup.board_overrides: planned; connect() refuses a device that sets them)
         v
 devices/<NAME>.py  Device          per-qubit freq/gain/sigma, readout freq/gain/window, parity
         |  selected by Session(qubit_readout, qubit_pulse)
         v
 qicklab/runs/recipes.py  R.<x>()   library defaults (documented sane values)
-        |  < session group (Session(spec=R.spec(...), ...))  < per-step kwargs (R.t1(relax_delay=...))
+        |  < session group (Session(spec=G.spec(...), ...))  < per-step kwargs (R.t1(relax_delay=...))
         v
-core/config.py  measurement_config() (regime A) / singleshot_config() (regime B)
+core/session.py  connect() -> core/context.py build_context() (regime A);
+                 run_step() -> core/config.py rebuild_singleshot_config() on A -> B
         |
         v
-core/context.py  Context           soc, soccfg, yoko, config, derived scalars
-        |  step.fn(ctx, *groups, **params) -> ctx.working_config(...) -> experiment cfg
+core/context.py  Context           soc, soccfg, yoko, config, derived scalars, session, regime
+        |  step.fn(ctx, *step.arguments(groups, qubit)) -> ctx.working_config(...) -> experiment cfg
         v
 ExperimentClass(cfg=...)           saved verbatim to .json and h5 attrs["config"]
 ```
@@ -269,7 +287,8 @@ measured values are written back:
 | `res_phase` | active-reset readout calibration (`modified_ramsey` with reset, `active_reset_verify`) | next switch to regime B |
 
 `interleaved_coherence` swaps `ctx.config` between the two regimes per step and restores it in
-`finally`. Calibrated values meant to survive a session go through calibration write-back
+`finally`; a session's B -> A switch does the same (the held regime-A config comes back with its
+carry-overs, [config regimes](concepts/config_regimes.md#how-run-switches)). Calibrated values meant to survive a session go through calibration write-back
 (`core.io.record_calibration`, see [adding_a_device.md](adding_a_device.md#calibration-write-back)),
 not through `ctx.config`.
 
@@ -295,8 +314,10 @@ golden snapshot: the experiment classes created, their full `cfg`, method calls,
 of every compiled tProc program/envelope/readout config, and the yoko command stream. A pass
 proves the refactored code sends the same things to the hardware for the CSTQ03 parameter
 set. It does not prove the programs are physically right; that rests on review and on
-`tests/hardware/verify_modified_ramsey_timing.py` against the board. Details and limits:
-`tests/regression/README.md`.
+`tests/hardware/verify_modified_ramsey_timing.py` against the board. Two drivers replay the
+same labels: `driver_qicklab` through the legacy call shapes (it alone writes the golden) and
+`driver_plan` as `Session(devices.CSTQ03)` + a PLAN of recipes; both must match the golden.
+Details and limits: `tests/regression/README.md`.
 
 Rule: behaviour-preserving refactors and bug fixes are separate commits. A refactor commit
 must leave the golden green (only documented dead-key diffs are allowlisted). A fix commit
@@ -315,19 +336,26 @@ has a "Known issues" section.
    Call `acquire`, then `finish(Cls, inst, data, ...)` for display + save
    ([display never loses the record](#display-never-loses-the-record)).
 3. Recipe: add a keyword-only function to `qicklab/runs/recipes.py` with explicit parameters,
-   snake_case names, defaults and a one-line doc each. It returns the legacy-keyed dict the run
-   function consumes and a `Step(name, fn, regime, needs, params)`. Device-dependent values
-   default to `None` and resolve from `session.qubit(q)` at run time. Unknown keywords must
-   raise `TypeError`.
-4. Register the step in the `STEPS` registry (`qicklab/runs/__init__.py`), with its regime
-   (`"A"` or `"B"`) and the session groups it needs.
+   snake_case names, defaults and a one-line doc each, ending in
+   `return _step("<step>", locals())`. `_step` builds the
+   `Step(name, fn, regime, needs, params)`; `params` holds the legacy-keyed dicts the run
+   function consumes. Device-dependent values default to `None` and resolve from the pulse
+   qubit at run time (a `_Slot(..., device=...)` resolver). Unknown keywords raise `TypeError`
+   because the function is keyword-only.
+4. Register the step at the bottom of `qicklab/runs/recipes.py`:
+   `_register("<step>", run_fn, "A" or "B", *slots)`. List the slots in the order of the run
+   function's positional arguments after `ctx`. Each slot is a `_Slot(name, keys)`: `name` is a
+   session group (`"coherence"`; `keys` are the step's overrides of it) or the run's own dict
+   argument, and `keys` maps legacy keys to keywords. `STEPS` (in `qicklab.runs.recipes`,
+   re-exported as `qicklab.runs.STEPS`) is built from these registrations.
 5. Parameter registry: add every new key to `PARAMS` in `qicklab/core/params.py`, keyed by
    `(key, scope)` with units. `tests/test_params_registry.py` records the keys each experiment
    actually reads at runtime and fails if one is missing.
 6. Docs: add `docs/experiments/<step>.md` (template: What it measures, Pulse sequence, How to
    run, Parameters, Outputs, Analysis, Findings & notes, Known issues) and regenerate tables
    with `python scripts/gen_docs.py`.
-7. Regression: add a run label to the driver so the new step is fingerprinted.
+7. Regression: add a run label so the new step is fingerprinted (`driver_qicklab` writes it
+   into the golden; `driver_plan` must reproduce it through the recipe).
 
 ## Testing
 
@@ -341,6 +369,7 @@ python -m pytest tests                         # everything collected, incl. the
 python -m pytest tests -m "not slow"           # skip the long offline analysis tests
 python -m pytest tests/regression -q           # golden only
 REGRESSION_LABELS=RunT1,RunT2 python -m pytest tests/regression -q
+REGRESSION_DRIVERS=plan python -m pytest tests/regression -q   # only the Session/PLAN replay
 REGRESSION_UPDATE=1 python -m pytest tests/regression -q   # rewrite golden: fix commits only
 python scripts/gen_docs.py                     # regenerate docs/parameters.md
 ```

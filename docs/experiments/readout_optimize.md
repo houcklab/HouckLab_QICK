@@ -1,5 +1,7 @@
 # readout_optimize: single-shot readout gain × frequency map (ReadOpt_wSingleShotFF)
 
+Recipe: `R.readout_optimize(...)` (`qicklab.runs.recipes`; every keyword with its default and unit is in the docstring, `help(R.readout_optimize)`). Session groups: [step table](../running_a_session.md#steps). Generated parameter tables come in phase 6.
+
 ## What it measures
 
 A 2-D grid over readout (cavity) DAC gain and readout frequency. At every grid point

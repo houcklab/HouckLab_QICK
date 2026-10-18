@@ -1,5 +1,7 @@
 # charge_sweep: qubit spectroscopy vs charge bias (QubitSpecSliceFF)
 
+Recipe: `R.charge_sweep(...)` (`qicklab.runs.recipes`; every keyword with its default and unit is in the docstring, `help(R.charge_sweep)`). Session groups: [step table](../running_a_session.md#steps). Generated parameter tables come in phase 6.
+
 ## What it measures
 
 The step steps the charge-bias yoko through a voltage grid and takes a two-tone qubit
@@ -35,10 +37,10 @@ ADC (ro 0,1)                                              [ window ]
 ## How to run
 
 Runs in **regime A**. The voltage grid comes from the session charge group
-(`R.charge_range()`, legacy `charge_params`), and the spec settings from the spec group.
+(`G.charge_range()`, legacy `charge_params`), and the spec settings from the spec group.
 
 ```python
-session = Session(..., charge=R.charge_range(voltage_start=0.0, voltage_end=0.05,
+session = Session(..., charge=G.charge_range(voltage_start=0.0, voltage_end=0.05,
                                              voltage_step=0.005))
 PLAN = [R.charge_sweep()]
 ```

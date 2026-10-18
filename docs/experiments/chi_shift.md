@@ -1,5 +1,7 @@
 # chi_shift
 
+Recipe: `R.chi_shift(...)` (`qicklab.runs.recipes`; every keyword with its default and unit is in the docstring, `help(R.chi_shift)`). Session groups: [step table](../running_a_session.md#steps). Generated parameter tables come in phase 6.
+
 Class `ChiShift` (see `qicklab.experiments.chi_shift`). Regime **A**.
 
 ## What it measures

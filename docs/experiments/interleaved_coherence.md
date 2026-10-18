@@ -1,5 +1,7 @@
 # interleaved_coherence
 
+Recipe: `R.interleaved_coherence(...)` (`qicklab.runs.recipes`; every keyword with its default and unit is in the docstring, `help(R.interleaved_coherence)`). Session groups: [step table](../running_a_session.md#steps). Generated parameter tables come in phase 6.
+
 Run function in `qicklab.runs.interleave`; experiments `UndrivenSingleShot`, `T1FF`, `T2R`,
 `T2EMUX`. Regime **A** on entry and exit; the step builds the regime-B config for its
 undriven sub-step and swaps configs per sub-step.
@@ -118,6 +120,11 @@ inspect them rather than discarding them silently.
   abort: that record is saved, the traceback printed and the loop goes on
   ([architecture](../architecture.md#display-never-loses-the-record)). Any other exception (acquire, hardware) or a Ctrl-C still
   aborts the whole loop (no per-step retry). The session config is restored on the way out.
+- With every sub-experiment disabled, `run_interleaved_coherence` prints `no experiments
+  enabled` and returns before its restoring `finally`, leaving `ctx.config` on the single-shot
+  config (known bug, not fixed in the refactor). In a session PLAN the session restores the
+  regime-A config after the step
+  ([config regimes](../concepts/config_regimes.md#how-run-switches)); a direct call does not.
 - T1, T2R and T2E each sleep 10 s after their record, so a cycle has at least 30 s of idle
   time (10 s per enabled coherence sub-step).
 - The legacy undriven defaults are `Shots = 1,000,000` at `relax_delay = 300` us, i.e.

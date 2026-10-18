@@ -1,5 +1,7 @@
 # undriven_single_shot: readout-only blob test and telegraph series (UndrivenSingleShot)
 
+Recipe: `R.undriven_single_shot(...)` (`qicklab.runs.recipes`; every keyword with its default and unit is in the docstring, `help(R.undriven_single_shot)`). Session groups: [step table](../running_a_session.md#steps). Generated parameter tables come in phase 6.
+
 ## What it measures
 
 This step takes single-shot readouts of a qubit that is **never driven** and

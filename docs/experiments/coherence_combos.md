@@ -1,5 +1,7 @@
 # coherence_combos: t1_t2e, t1_t2r_t2e
 
+Recipe: `R.t1_t2e(...)`, `R.t1_t2r_t2e(...)` (`qicklab.runs.recipes`; every keyword with its default and unit is in the docstring, `help(R.t1_t2e)`). Session groups: [step table](../running_a_session.md#steps). Generated parameter tables come in phase 6.
+
 Classes `T1FF`, `T2EMUX`, `T2R` (see `qicklab.runs.coherence`). Regime **A**.
 
 ## What it measures

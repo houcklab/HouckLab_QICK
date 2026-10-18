@@ -1,5 +1,7 @@
 # transmission_sweep
 
+Recipe: `R.transmission_sweep(...)` (`qicklab.runs.recipes`; every keyword with its default and unit is in the docstring, `help(R.transmission_sweep)`). Session groups: [step table](../running_a_session.md#steps). Generated parameter tables come in phase 6.
+
 Class `CavitySpecFF` (see `qicklab.experiments.transmission`). Regime **A**.
 
 ## What it measures

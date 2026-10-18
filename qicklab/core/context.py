@@ -36,6 +36,11 @@ class Context:
     qubit_frequency_center: float
     qubit_sigma: float
     qubit_flattop: object
+    # set by qicklab.core.session.connect: the Session, the regime `config` is in, and the
+    # regime-A config held while a PLAN is in regime B (docs/running_a_session.md#the-plan)
+    session: object = None
+    regime: str = "A"
+    regime_a_config: dict | None = None
 
     def working_config(self, *updates):
         """Return a shallow copy of `config` updated with `updates`, for transient knobs."""

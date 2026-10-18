@@ -1,5 +1,7 @@
 # two_tone_spec
 
+Recipe: `R.two_tone_spec(...)` (`qicklab.runs.recipes`; every keyword with its default and unit is in the docstring, `help(R.two_tone_spec)`). Session groups: [step table](../running_a_session.md#steps). Generated parameter tables come in phase 6.
+
 Class `QubitSpecSliceFF` (see `qicklab.experiments.qubit_spec`); projection and peak
 helpers in `qicklab.analysis.iq` / `qicklab.analysis.spectroscopy`. Regime **A**.
 
@@ -39,7 +41,7 @@ PLAN = [R.two_tone_spec()]                                   # regime A, values 
 PLAN = [R.two_tone_spec(gain=1500, spec_span=2, spec_num_points=401)]
 ```
 
-Most values come from the session `spec` group (`Session(spec=R.spec(...))`), shared with
+Most values come from the session `spec` group (`Session(spec=G.spec(...))`), shared with
 [spec_gain_length_sweep](spec_gain_length_sweep.md), [trans_qubit_spec](trans_qubit_spec.md)
 and the charge-dispersion steps. The sweep is centred on the device qubit frequency of
 `qubit_pulse`.

@@ -1,5 +1,7 @@
 # single_shot: g/e single-shot readout (SingleShotProgramFFMUX)
 
+Recipe: `R.single_shot(...)` (`qicklab.runs.recipes`; every keyword with its default and unit is in the docstring, `help(R.single_shot)`). Session groups: [step table](../running_a_session.md#steps). Generated parameter tables come in phase 6.
+
 ## What it measures
 
 This step acquires two IQ clouds of single shots: one with no qubit pulse (|g>
@@ -105,7 +107,7 @@ Path `SingleShot/` (or `SingleShot_MRCalib/` for separator calibrations).
   - `contrast_hist<r>`: the `hist_process` contrast C (the png number, `inst.fid`).
   - `P_e_given_g<r>`, `P_g_given_e<r>`: fraction of g shots above / e shots at or below
     the saved threshold after rotating by the saved angle, counted by
-    `readout_assignment_errors`, the same helper `t1_ss` uses for its readout correction
+    `readout_assignment_errors`, the same helper `t1_single_shot` uses for its readout correction
     (so its printed P(e|g), P(g|e) are these numbers exactly). They include prep errors
     (thermal |e⟩, pi infidelity, decay during readout).
   - `assignment_fidelity<r>` = 1 − (P_e_given_g + P_g_given_e)/2 = (1 + C)/2.
@@ -114,7 +116,7 @@ Path `SingleShot/` (or `SingleShot_MRCalib/` for separator calibrations).
   - From `calibrate_readout_from_labeled_shots` (mean/LDA axis, the Modified Ramsey
     calibration): `snr_analog<r>`, `cal_contrast<r>`, and its own discriminator
     `cal_axis<r>`, `cal_midpoint<r>`, `cal_threshold<r>` (on (IQ − cal_midpoint)·cal_axis,
-    not on the rotated I; `t1_ss` and active reset use `threshold`/`angle`).
+    not on the rotated I; `t1_single_shot` and active reset use `threshold`/`angle`).
     `readout_gate_pass<r>` = 1 when none of the parity-analysis readout gates trips
     (analog SNR < 1, contrast < 0.3, fewer than 500 shots in a class), else 0; each
     tripped gate is printed as a WARNING. The calibration's e-cloud warnings (purity
@@ -155,7 +157,7 @@ Path `SingleShot/` (or `SingleShot_MRCalib/` for separator calibrations).
 1. Rotate both clouds by `θ = −arctan2(Q̃_e − Q̃_g, Ĩ_e − Ĩ_g)` (tilde = median), so
    the g→e axis lies along +I.
 2. Take the exact empirical CDF of the rotated I of each cloud (every shot counts).
-3. `contrast(t) = CDF_g(t) − CDF_e(t)` with g := I ≤ t (the rule `t1_ss` applies).
+3. `contrast(t) = CDF_g(t) − CDF_e(t)` with g := I ≤ t (the rule `t1_single_shot` applies).
    "fid" is the maximum; the threshold is the midpoint between the maximising shot
    value and the next one, so "fid" is exactly the contrast the saved threshold gives
    on these shots. The 200-bin histogram is drawn in the png only, with the threshold

@@ -1,6 +1,7 @@
 """Run-level file output: timestamped names, npz + config-json records, cycle summaries,
 and the provenance record attached to saved files (docs/architecture.md#provenance)."""
 
+import dataclasses
 import hashlib
 import importlib.metadata
 import json
@@ -14,6 +15,7 @@ from datetime import datetime
 
 import numpy as np
 
+from qicklab.core.device import ParityParams, Qubit, source
 from qicklab.hardware.yoko import last_levels
 
 
@@ -254,4 +256,157 @@ def write_provenance_text(stem, text):
         return path
     except Exception as exc:
         print(f"[provenance] could not write {path}: {exc!r}")
+        return None
+
+
+# --------------------------------------------------------------------------------------------
+# Calibration write-back and the zero-span cache (docs/adding_a_device.md#calibration-write-back).
+# Both live in the qubit's data folder; neither ever edits devices/<NAME>.py.
+# --------------------------------------------------------------------------------------------
+CALIBRATIONS_FILE = "calibrations.jsonl"
+ZSP_CACHE_FILE = "zsp_cache.json"
+ZSP_CACHE_VERSION = 1
+ZSP_CACHED = ("ZSP_ParityFreqs_Cached", "ZSP_Separator_Cached")  # the run's in-place caches
+
+# record_calibration keyword -> (part of the Qubit, field): Qubit fields as they are, the
+# readout's and the parity calibration's with a readout_ / parity_ prefix
+_QUBIT_PART = {
+    f.name: ("qubit", f.name)
+    for f in dataclasses.fields(Qubit)
+    if f.name not in ("readout", "parity", "notes")
+}
+_QUBIT_PART.update(
+    {f"readout_{n}": ("readout", n) for n in ("freq", "gain", "kappa_mhz")},
+)
+_QUBIT_PART.update(
+    {f"parity_{f.name}": ("parity", f.name) for f in dataclasses.fields(ParityParams)}
+)
+
+
+def qubit_file(device, q, name):
+    """`<data_root>/Q{q}/<name>`: a per-qubit file beside the qubit's data folders."""
+    return f"{device.data_root}/Q{q}/{name}"
+
+
+def _plain(value):
+    """JSON-ready copy: numpy scalars -> numbers, arrays -> lists, tuples -> lists."""
+    if isinstance(value, np.ndarray):
+        return value.tolist()
+    if isinstance(value, np.generic):
+        return value.item()
+    if isinstance(value, dict):
+        return {k: _plain(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_plain(v) for v in value]
+    return value
+
+
+def record_calibration(device, q, *, step=None, **values):
+    """Append `values` measured on qubit q to calibrations.jsonl; print a paste-ready Qubit line.
+
+    Keywords: a Qubit field (freq, gain, pi2_gain, sigma, ...), readout_freq / readout_gain /
+    readout_kappa_mhz, or parity_<ParityParams field>; anything else raises TypeError before a
+    write. Returns the updated Qubit (`device.with_qubit` for a trial). A failed write is
+    printed, never raised: the measurement is already saved.
+    """
+    if q not in device.qubits:
+        raise KeyError(f"{device.name} has no qubit {q!r}; qubits are {sorted(device.qubits)}")
+    unknown = sorted(set(values) - set(_QUBIT_PART))
+    if unknown:
+        raise TypeError(f"record_calibration: unknown keys {unknown}; known: {sorted(_QUBIT_PART)}")
+    if not values:
+        raise ValueError("record_calibration: no values given")
+    values = {k: _plain(v) for k, v in values.items()}
+    parts = {"qubit": {}, "readout": {}, "parity": {}}
+    for key, value in values.items():
+        part, name = _QUBIT_PART[key]
+        parts[part][name] = value
+    qb = device.qubits[q]
+    changes = dict(parts["qubit"])
+    if parts["readout"]:
+        changes["readout"] = dataclasses.replace(qb.readout, **parts["readout"])
+    note = ""
+    if parts["parity"]:
+        if qb.parity is not None:
+            changes["parity"] = dataclasses.replace(qb.parity, **parts["parity"])
+        elif {"df_mhz", "f_upper_mhz"} <= set(parts["parity"]):
+            changes["parity"] = ParityParams(**parts["parity"])
+        else:
+            note = " (parity values not in the line: the qubit has no ParityParams yet)"
+    new = dataclasses.replace(qb, **changes)
+
+    path = qubit_file(device, q, CALIBRATIONS_FILE)
+    record = {
+        "time": iso_time(time.time()),
+        "device": device.name,
+        "cooldown": device.cooldown,
+        "qubit": q,
+        "step": step,
+        "values": values,
+    }
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "a") as f:
+            f.write(json.dumps(record, default=str) + "\n")
+        where = path
+    except Exception as exc:
+        where = f"NOT written ({exc!r})"
+    shown = ", ".join(f"{k}={v!r}" for k, v in values.items())
+    print(f"[calibration] {device.name} Q{q} ({step or 'manual'}): {shown} -> {where}{note}")
+    print(f"    {q}: {source(new)},")
+    return new
+
+
+def zsp_cache_path(device, q):
+    """`<data_root>/Q{q}/zsp_cache.json`."""
+    return qubit_file(device, q, ZSP_CACHE_FILE)
+
+
+def read_zsp_cache(device, q):
+    """The zero-span cache record of qubit q ({ZSP_ParityFreqs_Cached, ZSP_Separator_Cached,
+    qubit_readout, qubit_pulse, time, ...}), separator values as arrays; None if absent or unreadable.
+    """
+    path = zsp_cache_path(device, q)
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path) as f:
+            record = json.load(f)
+        sep = record["ZSP_Separator_Cached"]
+        record["ZSP_Separator_Cached"] = {
+            k: None if v is None else np.asarray(v, dtype=float) for k, v in sep.items()
+        }
+        if not isinstance(record.get("ZSP_ParityFreqs_Cached"), dict):
+            raise ValueError("no ZSP_ParityFreqs_Cached dict")
+        return record
+    except Exception as exc:
+        print(f"[zsp cache] ignoring unreadable {path}: {exc!r}")
+        return None
+
+
+def write_zsp_cache(device, q, parity_freqs, separator, **meta):
+    """Write the run's two caches (and `meta`, e.g. qubit_readout) to zsp_cache.json.
+
+    Replaces the file atomically; returns the path, or None after printing a failed write.
+    """
+    path = zsp_cache_path(device, q)
+    record = {
+        "version": ZSP_CACHE_VERSION,
+        "time": iso_time(time.time()),
+        "device": device.name,
+        "cooldown": device.cooldown,
+        "qubit": q,
+        **_plain(meta),
+        "ZSP_ParityFreqs_Cached": _plain(dict(parity_freqs)),
+        "ZSP_Separator_Cached": _plain(dict(separator)),
+    }
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp = path + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(record, f, indent=2, default=str)
+        os.replace(tmp, path)
+        return path
+    except Exception as exc:
+        print(f"[zsp cache] could not write {path}: {exc!r}")
         return None

@@ -5,10 +5,11 @@ device, picks the qubit, sets a few shared knobs and lists the steps to run, in 
 physics lives in `qicklab`; all chip numbers live in `devices/<device>.py`
 ([adding_a_device.md](adding_a_device.md)). You should never need to edit either to take data.
 
-> Status (2026-10-13): this is the phase-5 session API from the refactor design. Until it
-> lands, `Runners/CSTQ03_BFC.py` on this branch is the working runner. Recipe keyword names
-> shown here are illustrative; the authoritative list will be generated into
-> `docs/parameters.md` (phase 6, not yet present) and each [experiments/](experiments/README.md) page.
+> Status (2026-10-17): `Session`, `run`, `connect`, `run_step` and the dry run are in
+> `qicklab/core/session.py`; the CSTQ03 session runner is `runners/CSTQ03_session.py`
+> ([below](#the-cstq03-session-runner)). `runners/CSTQ03_BFC.py` still works and is deleted in
+> phase 5b. Every recipe keyword is in its function's docstring (`help(R.t1)`); the generated
+> tables (`docs/parameters.md`, each [experiments/](experiments/README.md) page) come in phase 6.
 
 ## The session file
 
@@ -16,6 +17,7 @@ physics lives in `qicklab`; all chip numbers live in `devices/<device>.py`
 """CSTQ03, 2026-10-01 cooldown."""
 from devices.CSTQ03 import DEVICE
 from qicklab.core.session import Session, run
+from qicklab.runs import groups as G
 from qicklab.runs import recipes as R
 
 SESSION = Session(
@@ -26,10 +28,10 @@ SESSION = Session(
     yoko_fixed=False,         # True: charge "sweeps" hold the bias (repeat over time instead)
     interactive_plots=False,  # False: plots are saved, never block (see below)
     # shared recipe groups: every step that needs one reads the same object
-    spec=R.spec(),
-    coherence=R.coherence(relax_delay=3000),
-    echo=R.echo(),
-    single_shot=R.single_shot(),
+    spec=G.spec(),
+    coherence=G.coherence(relax_delay=3000),
+    echo=G.echo(),
+    single_shot=G.single_shot(),
 )
 
 PLAN = [
@@ -47,6 +49,65 @@ if __name__ == "__main__":
 
 Nothing touches hardware until `run()` is called. Importing the file is safe.
 
+### The CSTQ03 session runner
+
+`runners/CSTQ03_session.py` is the session file for CSTQ03 and replaces
+`runners/CSTQ03_BFC.py`. It has three blocks:
+
+1. `SESSION`: qubits, bias, `yoko_fixed`, and the shared groups. Only the legacy runner's
+   repetition counts differ from the library groups (`G.coherence(repetitions=1000)`,
+   `G.echo(repetitions=3000)`).
+2. `STEP`: one Step per canonical name, with the legacy runner's values where they differ from
+   the library defaults (for example `R.t1_single_shot(repetitions=3000)`,
+   `R.modified_ramsey(df=1, f_ge=3754.5, ...)`).
+3. `PLAN`: the steps to run, e.g. `PLAN = [STEP["transmission_fit"], STEP["t1"]]`. Any step
+   can be written out instead with its own overrides (`R.t1(relax_delay=5000)`).
+
+```
+python -m runners.CSTQ03_session              # on the fridge
+python -m runners.CSTQ03_session --dry-run    # fake board, nothing kept
+```
+
+Run it from the repo root (or PyCharm with the repo root as sources root). The legacy
+repetition counts make some `STEP` entries long even in a dry run: `t1`, `t2_echo` and
+`modified_ramsey` stop at the dry-run guard (`INCOMPLETE`), and the default
+`STEP["undriven_single_shot"]` (10^6 shots, `repeat=10000`) analyses 41 records of a million shots
+before it stops (tens of minutes). To check a plan offline, dry-run it with shorter steps,
+e.g. `R.undriven_single_shot(shots=10_000)`. The effective
+parameters printed for each step are equivalent to those the legacy runner passed for the same
+flag, not a copy of its dicts: every key the run reads has the runner's value, the run's own
+defaults are written out, and the runner's dead keys (keys the run never reads, such as
+`lower_freq`/`upper_freq` of `ChargeDispersion_params` and `Gauss` of
+`ModifiedRamsey_Control_params`) are dropped. `tests/test_session_runner.py` checks this, step
+by step, while the legacy runner exists; the dropped keys are a pinned list there, so a runner
+key with no recipe keyword fails the test rather than silently not reaching the run. A
+legacy flag maps to its step like this:
+
+| legacy flag | step | legacy flag | step |
+|---|---|---|---|
+| `ConstantTone` | `constant_tone` | `RunT1` | `t1` |
+| `Constant2Tone` | `constant_two_tone` | `RunT2` | `t2_ramsey` |
+| `RunTransmissionSweep` | `transmission_fit` | `RunT2E` | `t2_echo` |
+| `RunTransmissionSweeps` | `transmission_sweep` | `RunT1T2E` | `t1_t2e` |
+| `Run2ToneSpec` | `two_tone_spec` | `RunT1T2RT2E` | `t1_t2r_t2e` |
+| `RunSpecGainLengthSweep` | `spec_gain_length_sweep` | `RunInterleavedCoherence` | `interleaved_coherence` |
+| `RunTrans_QubitSpec` | `trans_qubit_spec` | `RunAutoCoherence` | `auto_coherence` |
+| `RunChiShift` | `chi_shift` | `SingleShot` | `single_shot` |
+| `RunAmplitudeRabi` | `amplitude_rabi` | `RunUndrivenSingleShot` | `undriven_single_shot` |
+| `RunChargeSweep` | `charge_sweep` | `RunT1SS` | `t1_single_shot` |
+| `RunChargeTransmissionSweep` | `charge_transmission_sweep` | `SingleShot_ReadoutOptimize` | `readout_optimize` |
+| `Run2ToneChargeDispersionQuasiCW` | `two_tone_charge_dispersion_quasicw` | `SingleShot_QubitOptimize` | `qubit_optimize` |
+| `RunChargeDispersionQuasiCW` | `charge_dispersion_quasicw` | `RunActiveResetVerify` | `active_reset_verify` |
+| `RunChargeDispersionRamsey` | `charge_dispersion_ramsey` | `RunModifiedRamsey` | `modified_ramsey` |
+| `RunZeroSpanParity` | `zero_span_parity` | `RunModifiedRamsey_Control` | `modified_ramsey_control` |
+
+The legacy runner ran its flags in a fixed order (every regime-A flag, then the switch, then the
+regime-B flags). `STEP` is written in that order: to get the legacy behaviour from several
+flags, list their steps in PLAN in the order they appear in `STEP`. The `ZSP_*`, `Validate_*` and `Build_EvidenceReport` settings are
+keywords of `R.zero_span_parity` (`run_mode=`, `validate_static_contrast=`, `parity_spec={...}`,
+...). For an offline dry run of `zero_span_parity`, `modified_ramsey*` and the charge-dispersion
+steps, see [Dry run](#dry-run).
+
 ### Session fields
 
 | field | units | meaning |
@@ -57,7 +118,7 @@ Nothing touches hardware until `run()` is called. Importing the file is safe.
 | `bias_v` | V | charge-line yoko setpoint, ramped to once at connect |
 | `yoko_fixed` | bool | charge sweeps hold the bias instead of stepping it: a cheap way to repeat two-tone spec over time |
 | `interactive_plots` | bool | `False` (default): Agg backend, `plt.show()` is a no-op and every figure is only saved as png (planned; see [Plots](#plots)) |
-| `transmission`, `spec`, `charge`, `tones`, `coherence`, `echo`, `single_shot` | | shared recipe groups (next section) |
+| `transmission`, `spec`, `charge`, `tones`, `coherence`, `echo`, `single_shot` | | shared recipe groups (next section); left out = the library group `G.<group>()`, a given dict is copied |
 
 `qubit_readout` and `qubit_pulse` are usually the same. They differ only for cross-qubit
 experiments; the legacy code is not consistent about which one a step uses for `Qubit_number`
@@ -79,7 +140,7 @@ live on the session, not on one step. This reproduces the legacy runner, where e
 | `tones` | `tl` (`tone_length`) | regime-A base config, `constant_two_tone` |
 | `coherence` | `T1T2_params` | `t1`, `t2_ramsey`, `t1_t2e`, `t1_t2r_t2e`, `trans_qubit_spec` (its `repetitions`), `charge_dispersion_ramsey`, `interleaved_coherence` |
 | `echo` | `T2E_params` | `t2_echo`, `t1_t2e`, `t1_t2r_t2e`, `interleaved_coherence` |
-| `single_shot` | `SS_params` | the regime-B config builder (shots, relax delay, pi/2 flag), `single_shot`, `t1_ss`, `qubit_optimize`, `interleaved_coherence` |
+| `single_shot` | `SS_params` | the regime-B config builder (shots, relax delay, pi/2 flag), `single_shot`, `t1_single_shot`, `qubit_optimize`, `interleaved_coherence` |
 
 ### Precedence
 
@@ -87,12 +148,38 @@ live on the session, not on one step. This reproduces the legacy runner, where e
 library recipe default  <  session group  <  per-step override (kwargs on R.<step>(...))
 ```
 
-Example: the library default T1 relax delay is replaced by `coherence=R.coherence(relax_delay=3000)`
+Example: the library default T1 relax delay is replaced by `coherence=G.coherence(relax_delay=3000)`
 for every coherence step; `R.t1(relax_delay=5000)` uses 5000 for that one step only.
 Device-dependent defaults (`None` in the recipe) resolve from the selected qubit at run time;
 for example Modified Ramsey's upper-branch frequency comes from
 `device.qubits[q].parity.f_upper_mhz`, and `symmetric_ramsey=True` with no `f_upper_mhz`
-raises instead of falling back to the centre frequency.
+raises instead of falling back to the centre frequency. Groups resolve the same way: the
+`spec` group's `gain` left at `None` is `Qubit.spec_gain`, else 800. Every Step does this
+itself when its arguments are built (`Step.fill_groups`, which is `G.resolve`), so a library
+`G.spec()` never hands `None` to a run.
+
+### Values the device does not carry
+
+The design lists the voltage window and the spectroscopy gain as device-dependent values.
+Two kinds still have concrete library defaults (equal to the CSTQ03 runner's values), listed
+in `qicklab.runs.recipes.LIBRARY_DEVICE_VALUES`:
+
+| Step | Keywords | Library value | Why it is not `None` |
+|---|---|---|---|
+| `modified_ramsey_control` | `voltage_min`, `voltage_max`; `gain` | 0 to 0.010 V; 700 | no voltage-window field on the device; search gain |
+| `two_tone_charge_dispersion_quasicw` | `voltage_min`, `voltage_max`; `gain` | 0 to 0.010 V; 500 | same |
+| `auto_coherence` | `ss_voltage_min`, `ss_voltage_max`; `spec_gain` | 0 to 0.01 V; 700 | same |
+| `zero_span_parity` | `parity_spec={"gain": ...}` | 500 | search gain |
+
+- **Voltage window.** The device model (`Qubit`, `ParityParams`) has no voltage-window field,
+  so there is nothing to resolve these from.
+- **Search gains.** The runner drives these search spectroscopies at gains (700, 500) that
+  differ from the `spec` group's 800. A single `Qubit.spec_gain` cannot hold all of them, so
+  only the `spec` group's `gain` resolves from it.
+
+Pass these per step (`R.modified_ramsey_control(voltage_max=0.02)`). This is an open design
+decision awaiting sign-off: either the device model gets a field for each of these, or the
+design accepts them as library values.
 
 Recipes are keyword-only functions: a misspelled keyword raises `TypeError` instead of being
 ignored. PyCharm's quick-doc (Ctrl+Q) on `R.t1` shows every parameter with its default and
@@ -108,15 +195,18 @@ step can appear with different overrides. Each step belongs to a regime:
 - Regime B: the single-shot config (readout window = `Device.ss_window`, `qubit_gain` = pi
   gain).
 
-`run()` rebuilds the config whenever the regime changes between consecutive steps. A rebuild
-starts from the board defaults, so it drops the two in-session carry-overs: the cavity
-frequency written by `transmission_fit`/`transmission_sweep` (`pulse_freq`; written only when
-the trace passes the [carry-over gate](experiments/transmission_fit.md#carry-over-gate),
-otherwise the previous value stays) and the readout
-phase written by the active-reset calibration (`res_phase`). If a regime-B step needs a new
-cavity frequency, put it in the device file (the calibration line printed by
-`transmission_fit` is paste-ready). See [concepts/config_regimes.md](concepts/config_regimes.md)
-and, for the window each regime uses, [concepts/readout_window.md](concepts/readout_window.md).
+`run()` switches the config whenever the regime changes between consecutive steps. A switch
+A -> B builds the single-shot config afresh from the board defaults, so the regime-B steps do
+not see the two in-session carry-overs: the cavity frequency written by
+`transmission_fit`/`transmission_sweep` (`pulse_freq`; written only when the trace passes the
+[carry-over gate](experiments/transmission_fit.md#carry-over-gate), otherwise the previous value
+stays) and the readout phase written by the active-reset calibration (`res_phase`). A switch
+B -> A puts back the regime-A config held at the A -> B switch, carry-overs included, as
+`interleaved_coherence` does. If a regime-B step needs a new cavity frequency, put it in the
+device file (under a session a transmission step whose gate passed prints a paste-ready
+`Qubit(...)` line, see [What gets logged](#what-gets-logged)). See
+[concepts/config_regimes.md](concepts/config_regimes.md#how-run-switches) and, for the window
+each regime uses, [concepts/readout_window.md](concepts/readout_window.md).
 
 ### Steps
 
@@ -155,15 +245,16 @@ tone keeps playing otherwise ([cw_tones](experiments/cw_tones.md#stray-tone-haza
 | `interleaved_coherence` | UndrivenSingleShot, T1FF, T2R, T2EMUX | each step's own | A (swaps to B per step) | coherence, echo, single_shot |
 | `single_shot` | SingleShotProgramFFMUX | `SingleShot` | B | single_shot |
 | `undriven_single_shot` | UndrivenSingleShot | `UndrivenSingleShot` | B | single_shot |
-| `t1_ss` | T1_SS, SingleShotProgramFFMUX | `T1SS`, `SingleShot` | B | single_shot |
+| `t1_single_shot` | T1_SS, SingleShotProgramFFMUX | `T1SS`, `SingleShot` | B | single_shot |
 | `readout_optimize` | ReadOpt_wSingleShotFF | `SingleShot_OptReadout` | B | |
 | `qubit_optimize` | QubitPulseOpt_wSingleShotFF | `SingleShot_OptQubit` | B | single_shot |
 | `auto_coherence` | (orchestrator) | `AutoCoherence/run_<timestamp>/auto-*` | B | |
 | `zero_span_parity` | ZeroSpanParity, QubitSpecSliceFF, SingleShotProgramFFMUX | `ZeroSpanParity`, `ZeroSpanParity/ZeroSpanParity_Spec` | B | |
 
 The legacy runner always ran regime A steps first, then switched once to regime B. A PLAN
-written in that order gives exactly the legacy behaviour; this is how the regression golden is
-replayed.
+written in that order gives exactly the legacy behaviour. The regression harness checks this:
+`tests/regression/driver_plan.py` replays every golden label as `Session` + PLAN and reproduces
+the golden leaf for leaf ([tests/regression/README.md](../tests/regression/README.md#driver_plan-the-session-api-replay)).
 
 ## Running
 
@@ -173,15 +264,54 @@ run(SESSION, PLAN, dry_run=True)   # no hardware: fake board, compiles every pro
 ```
 
 `run()` connects (Pyro4 to the RFSoC, opens the charge-line yoko, sets voltage mode, output on,
-ramps to `bias_v`), then for each step: rebuilds the config if the regime changed, resolves the
-step's parameters, logs them, and calls the step. The yoko is closed in `finally`, so an
-exception or Ctrl-C does not leave the session holding it. Closing does not ramp the bias down;
-the voltage stays wherever the last step left it.
+ramps to `bias_v`; this is the legacy `build_context` call fed from the device and the groups),
+checks the device against the board (`Device.validate(soccfg)`: errors raise, soft problems
+warn), then for each step: switches the regime if it changed, resolves the step's parameters,
+logs them, and calls the step. It returns the steps' return values. The yoko is closed in
+`finally`, so an exception or Ctrl-C does not leave the session holding it. Closing does not
+ramp the bias down; the voltage stays wherever the last step left it.
+
+The regime-B config is built from the session's `single_shot` group (its window `None` = the
+readout qubit's `Device.window(q, single_shot=True)`, its `qubit_pulse` `None` = the session's
+pulse qubit). A step's own override of that group reaches only that step. The one override
+that touches a config key is `R.single_shot(pi2_ss=...)`. While that step runs, the config's
+`pi2_SS` holds the step's value, so the saved cfg records the pulse that played; afterwards it
+is put back (the log says so). The legacy runner fed one `SS_params` to both, so the two never
+disagreed there.
+
+A device whose `Setup` sets `board_overrides` or `ff_qubits` is refused at connect
+(`NotImplementedError`): `build_context` does not apply them yet.
+
+### Dry run
 
 `dry_run=True` uses the fakes in `qicklab.core.fakes` (the same ones the regression harness
 uses): every tProc program compiles against a realistic `QickConfig`, so cfg typos, missing
 keys, timing violations (for example a Modified Ramsey tau shorter than its pi/2 envelopes) and
 buffer limits fail before you are on the fridge. It says nothing about physics.
+
+- Data goes to a temp data root that is deleted afterwards; your `zsp_cache.json` files are
+  copied in (read, never written). The provenance session record is restored afterwards.
+- `plt.show`, `plt.pause`, `time.sleep` and `input()` do not block; the CW-tone steps stop at once.
+- Every experiment a step builds runs, so the stages after a calibration loop compile too
+  (`auto_coherence` with library defaults: about 90 experiments, under a minute). The report lists, per
+  step, every experiment (class, path) built and how often.
+- Two guards stop a step: more than `DRY_RUN_MAX_REPEATS` (40) builds in a row of experiments the
+  step already built (a long repetition loop or grid), or `DRY_RUN_MAX_EXPERIMENTS` (200) builds
+  in all. The report then marks the step `INCOMPLETE`: the programs after the stop were not
+  compiled. Among the canonical steps with library defaults only `spec_gain_length_sweep` (its
+  10 x 49 grid; the saturation summary after the grid is not reached) gets there; shorten
+  `sweep_lengths` / `sweep_gains` (or `repetitions` elsewhere) to check the rest. An
+  `INCOMPLETE` step does not fail the dry run.
+- A step that raises is printed with its traceback and the dry run goes on; at the end a report
+  lists every step (experiments built, programs loaded, status) and `RuntimeError` names the
+  failed steps. Without failures `run` returns the report.
+- `zero_span_parity` with the default `recalibrate_parity_freqs=True` always fails a dry run:
+  the fake board's synthetic spectroscopy never resolves a parity doublet, so the step raises
+  (`pick_parity_drive_freq: no resolved parity doublet`) before its record programs compile.
+  To check the rest of the step offline, give the doublet and skip the search:
+  `R.zero_span_parity(recalibrate_parity_freqs=False, parity_freqs_cached={"lower_peak_MHz":
+  ..., "higher_peak_MHz": ...})`. With `recalibrate_parity_freqs=False`, a `Qubit.parity` or a
+  `zsp_cache.json` entry can supply the doublet instead.
 
 ### From a console (REPL)
 
@@ -218,11 +348,18 @@ stops the step, and the loop with it
 - At connect: the readout window, e.g.
   `[readout window] integration 15 us, adc_trig_offset 0.3 us, resonator tone 15.3 us`.
 - Before each step: the step name, its regime, any regime switch, and the effective parameters
-  after defaults, group and override. Copy this into your notebook; it is the complete
-  description of what ran.
-- Calibrating steps (`transmission_fit`, `amplitude_rabi`, `readout_optimize`,
-  `qubit_optimize`, `auto_coherence`, zero-span recalibration) append to
-  `<data_root>/Q<q>/calibrations.jsonl` and print a paste-ready `Qubit(...)` line. Nothing edits
+  after defaults, group and override. An A -> B switch also prints the session `single_shot`
+  group the regime-B config was built from (shots, relax delay, window, `pi2_SS`), which every
+  later regime-B step reads through the config, also the steps without a `single_shot` slot
+  (`readout_optimize`, `auto_coherence`, ...). Copy this into your notebook; with the switch
+  lines it is the complete description of what ran.
+- Calibration write-back: `qicklab.core.io.record_calibration` appends to
+  `<data_root>/Q<q>/calibrations.jsonl` and prints a paste-ready `Qubit(...)` line. The session
+  calls it after a `transmission_fit` / `transmission_sweep` whose carry-over gate wrote a new
+  `pulse_freq` (`readout_freq` of the readout qubit; not when `cavity_LO` != 0, where
+  `pulse_freq` is an IF) and after a zero-span parity recalibration. For the other calibrating
+  steps (`amplitude_rabi`, `readout_optimize`, `qubit_optimize`, `auto_coherence`) call it
+  yourself for now: their run functions return nothing the session could record. Nothing edits
   the device file for you. See [adding_a_device.md](adding_a_device.md#calibration-write-back).
 - Every experiment writes its full `cfg` to a `.json` next to its data and into the h5
   `config` attribute. The saved cfg is the ground truth, not the log.
@@ -333,8 +470,11 @@ Error messages and their fixes are collected in [troubleshooting.md](troubleshoo
   sweeps). Later steps then run at a different voltage while the cfg's `current_voltage` still
   shows the session value; the provenance `bias.charge_yoko` holds the level the last ramp
   actually landed on.
-- Two steps mutate their caller's parameter dicts (`probe_freq` from
-  `two_tone_charge_dispersion_quasicw` leaks into `charge_dispersion_quasicw`; Modified Ramsey
-  control adds hysteresis/window keys). Order of such steps changes their parameters.
+- Two steps mutate their caller's parameter dicts. `two_tone_charge_dispersion_quasicw` writes
+  the chosen `probe_freq` into the dict given as `charge_dispersion=`; the CSTQ03 runner passes
+  `STEP["charge_dispersion_quasicw"]`'s own dict there, as the legacy runner shared
+  `ChargeDispersion_params`, so a later `charge_dispersion_quasicw` probes that frequency.
+  Modified Ramsey control adds hysteresis/window keys. Order of such steps changes their
+  parameters.
 - `charge_dispersion_ramsey` raises `KeyError: 'df'` with the CSTQ03 parameter set.
 - `qubit_optimize` raises `KeyError: 'pi2_SS'` if run in regime A.

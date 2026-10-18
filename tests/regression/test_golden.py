@@ -1,14 +1,17 @@
 """Golden-master check: every runner flag must still send the same thing.
 
-Regenerates the capture in memory with DRIVER, once per synthetic board
-variant, and compares it, (variant, run label) by (variant, run label), with
-golden_cstq03.json. Floats compare with a relative tolerance of 1e-9;
-``traceback`` entries are diagnostic only and ignored. The golden records the
-QICK version it was captured with; any other installed version fails loudly.
+Regenerates the capture in memory with each of DRIVERS, once per synthetic
+board variant, and compares it, (variant, run label) by (variant, run label),
+with golden_cstq03.json. DRIVER replays the frozen runner through the legacy
+call shapes; PLAN_DRIVER replays the same labels as Session + PLAN (recipes).
+Floats compare with a relative tolerance of 1e-9; ``traceback`` entries are
+diagnostic only and ignored. The golden records the QICK version it was
+captured with; any other installed version fails loudly.
 
-  REGRESSION_UPDATE=1          rewrite the golden from the current code
+  REGRESSION_UPDATE=1          rewrite the golden from the current code (DRIVER only)
   REGRESSION_LABELS=RunT1,...  capture/compare only these labels (faster)
   REGRESSION_VARIANTS=A        capture/compare only these board variants
+  REGRESSION_DRIVERS=plan      capture/compare only these drivers (qicklab, plan)
 """
 
 import importlib
@@ -23,6 +26,8 @@ from qick import get_version
 from tests.regression import capture as core
 
 DRIVER = "tests.regression.driver_qicklab"  # pre-refactor: tests.regression.driver_legacy
+PLAN_DRIVER = "tests.regression.driver_plan"  # compares only; never writes the golden
+DRIVERS = (DRIVER, PLAN_DRIVER)
 GOLDEN = Path(__file__).with_name("golden_cstq03.json")
 META = "__meta__"
 IGNORED_KEYS = frozenset({"traceback"})
@@ -33,6 +38,10 @@ UPDATE = os.environ.get("REGRESSION_UPDATE") == "1"
 ONLY = sorted(filter(None, os.environ.get("REGRESSION_LABELS", "").split(",")))
 VARIANTS = tuple(
     filter(None, os.environ.get("REGRESSION_VARIANTS", ",".join(core.VARIANTS)).split(","))
+)
+SELECTED_DRIVERS = tuple(
+    f"tests.regression.driver_{name}"
+    for name in filter(None, os.environ.get("REGRESSION_DRIVERS", "qicklab,plan").split(","))
 )
 GOLDEN_DATA = json.loads(GOLDEN.read_text(encoding="utf-8")) if GOLDEN.exists() else {}
 GOLDEN_META = GOLDEN_DATA.get(META, {})
@@ -54,16 +63,23 @@ def _check_qick_version():
         )
 
 
-@pytest.fixture(
-    scope="module"
-)  # module, not session: the teardown below must run before other test modules
-def capture():
+# module, not session: the teardown below must run before other test modules; one capture per
+# driver, the first torn down before the next is built
+@pytest.fixture(scope="module", params=DRIVERS, ids=lambda d: d.rsplit("_", 1)[-1])
+def capture(request):
+    unknown = set(SELECTED_DRIVERS) - set(DRIVERS)
+    if unknown:
+        pytest.fail(f"unknown REGRESSION_DRIVERS {sorted(unknown)}", pytrace=False)
+    if request.param not in SELECTED_DRIVERS:
+        pytest.skip("driver not in REGRESSION_DRIVERS")
+    if UPDATE and request.param != DRIVER:
+        pytest.skip(f"golden rewritten by {DRIVER} only")
     if not UPDATE:
         _check_qick_version()
     unknown = set(VARIANTS) - set(core.VARIANTS)
     if unknown:
         pytest.fail(f"unknown REGRESSION_VARIANTS {sorted(unknown)}", pytrace=False)
-    driver = importlib.import_module(DRIVER)
+    driver = importlib.import_module(request.param)
     result = core.capture_variants(driver.capture_all, ONLY or None, VARIANTS)
     if UPDATE:
         merged = result

@@ -1,5 +1,7 @@
 # modified_ramsey: fixed-tau Ramsey charge-parity record (ModifiedRamsey)
 
+Recipe: `R.modified_ramsey(...)` (`qicklab.runs.recipes`; every keyword with its default and unit is in the docstring, `help(R.modified_ramsey)`). Session groups: [step table](../running_a_session.md#steps). Generated parameter tables come in phase 6.
+
 ## What it measures
 
 A charge-sensitive transmon (or offset-charge-sensitive qubit) has two transition

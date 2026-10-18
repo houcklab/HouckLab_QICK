@@ -1,18 +1,21 @@
 """Capture the given run labels in memory with the current code and classify every difference vs the golden.
 
-usage: python docs/dev/refactor-2026-10/tools/diff_labels.py RunT1 SingleShot [--variants A]
+usage: python docs/dev/refactor-2026-10/tools/diff_labels.py RunT1 SingleShot [--variants A] [--driver plan]
+(--driver plan: capture through tests/regression/driver_plan.py, the Session/PLAN driver; default driver_qicklab)
 Run from the repo root with the venv active. Prints one line per differing leaf (path: old -> new) grouped
 by (variant, label) and a per-label summary by field class (cfg / hw / methods.* / data_digest / sets / ...).
 """
 import json, math, os, re, sys, collections
 os.environ.setdefault("MPLBACKEND", "Agg")
 sys.path.insert(0, os.getcwd())
-args = [a for a in sys.argv[1:] if not a.startswith("--")]
+driver = sys.argv[sys.argv.index("--driver") + 1] if "--driver" in sys.argv else "qicklab"
+args = [a for i, a in enumerate(sys.argv[1:], 1) if not a.startswith("--") and sys.argv[i - 1] not in ("--variants", "--driver")]
 variants = ("A",) if "--variants" in sys.argv and "A" in sys.argv[sys.argv.index("--variants") + 1] else ("A", "B")
 if "--variants" in sys.argv:
     variants = tuple(sys.argv[sys.argv.index("--variants") + 1].split(","))
 from tests.regression import capture as core
-from tests.regression import driver_qicklab as drv
+import importlib
+drv = importlib.import_module(f"tests.regression.driver_{driver}")
 golden = json.load(open("tests/regression/golden_cstq03.json", encoding="utf-8"))
 res = core.capture_variants(drv.capture_all, args or None, variants)
 def diff(e, x, path):

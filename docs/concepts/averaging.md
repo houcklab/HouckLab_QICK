@@ -11,7 +11,7 @@ in single-shot programs, silently loses data.
 | `reps` | hardware, one tProc program | the tProc loops the body `reps` times; QICK averages the readouts | `AveragerProgram` reads `cfg["reps"]` in `make_program()` at construction: set it before building the program |
 | `rounds` | software | the same program is run `rounds` times; results are averaged in Python | each round is a new program start (see the race below); raw per-shot buffers keep only the **last** round |
 | `expts` | hardware sweep | number of points of a register sweep (`RAveragerProgram`: frequency, gain, wait) | total shots = `reps x rounds x expts` |
-| `shots` (`Shots` in recipes) | single-shot programs | number of single shots; the program sets `reps = shots` and `rounds = 1` | `SingleShotProgram`, `UndrivenSingleShot`; `t1_ss` uses `reps` as shots per wait |
+| `shots` (`Shots` in recipes) | single-shot programs | number of single shots; the program sets `reps = shots` and `rounds = 1` | `SingleShotProgram`, `UndrivenSingleShot`; `t1_single_shot` uses `reps` as shots per wait |
 | `soft_avgs` | QICK, decimated acquisition | number of captures averaged by `acquire_decimated` | qick takes `cfg["rounds"]` over `soft_avgs` if both exist |
 | `repetitions` | experiment loop | run the whole experiment N times; each run writes its own h5/png/json | coherence recipes (`T1T2_params`, `T2E_params`); also, legacy cross-coupling, the loop count of `trans_qubit_spec` and `charge_dispersion_ramsey` |
 | `Repeat` | experiment loop | `undriven_single_shot` passes; each pass its own files, only the last is displayed | |

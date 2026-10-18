@@ -1,5 +1,7 @@
 # zero_span_parity: zero-span two-tone parity switching (ZeroSpanParity)
 
+Recipe: `R.zero_span_parity(...)` (`qicklab.runs.recipes`; every keyword with its default and unit is in the docstring, `help(R.zero_span_parity)`). Session groups: [step table](../running_a_session.md#steps). Generated parameter tables come in phase 6.
+
 ## What it measures
 
 The readout tone is parked at the cavity frequency and a continuous qubit drive is
@@ -123,9 +125,10 @@ Runs after the regime-B switch. The g/e separator calibration uses the single-sh
 window.
 
 ```python
-PLAN = [R.zero_span_parity(mode="strobe", sample_period_us=20.0,
-                           reps_per_chunk=10_000, n_chunks=60,
-                           read_length=5.0, adc_trig_offset=0.488)]
+PLAN = [R.zero_span_parity(run_mode="strobe",
+                           strobe={"sample_period_us": 20.0, "reps_per_chunk": 10_000,
+                                   "n_chunks": 60, "read_length": 5.0,
+                                   "adc_trig_offset": 0.488})]
 ```
 
 The run, in order:
@@ -162,8 +165,10 @@ The run, in order:
    `parity_partner_snr` (the weaker line's height over the per-point noise; `None` on
    the cached path). Otherwise use the cache (rule 6).
 2. **Separator.** With `RecalibrateSeparator`, run a SingleShot g/e calibration.
-   Otherwise validate the cache (rule 7). Both caches live on disk as
-   `<data_root>/Q{q}/zsp_cache.json`.
+   Otherwise validate the cache (rule 7). Under a session both caches live on disk as
+   `<data_root>/Q{q}/zsp_cache.json` (pulse qubit): read before the step for entries still
+   `None` (step value > `Qubit.parity` > file), rewritten after a successful run
+   ([adding_a_device](../adding_a_device.md#calibration-write-back)).
 3. Build the cfg. With any of stages 1-3 enabled (strobe only), run them now, on their
    own `ZeroSpanParity` instance, and feed their results into the cfg (see
    [Run order and feedback](#run-order-and-feedback)): stage 1 sets `read_pulse_freq`

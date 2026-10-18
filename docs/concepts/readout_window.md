@@ -34,7 +34,7 @@ The legacy builder printed the window at connect; a session prints the same line
 | Window | Set in | Used by | CSTQ03 values (2026-10-01 cooldown) |
 |---|---|---|---|
 | Regime A | `Readout.window` of the qubit, else `Device.readout_window` (legacy `Readout_Time`, `ADC_Offset`) | every regime-A step: transmission, two-tone, chi shift, Rabi, T1/T2R/T2E, charge dispersion, Modified Ramsey, ActiveResetVerify, the apriori single-shot separator measured inside Modified Ramsey / ActiveResetVerify | 15 us window, 0.3 us offset |
-| Single shot (regime B) | `Readout.ss_window`, else `Device.ss_window` (legacy `SS_params["Readout_Time"]`, `["ADC_Offset"]`) | `single_shot`, `undriven_single_shot`, `t1_ss`, `readout_optimize`, `qubit_optimize` | 15 us window, 0.3 us offset |
+| Single shot (regime B) | `Readout.ss_window`, else `Device.ss_window` (legacy `SS_params["Readout_Time"]`, `["ADC_Offset"]`) | `single_shot`, `undriven_single_shot`, `t1_single_shot`, `readout_optimize`, `qubit_optimize` | 15 us window, 0.3 us offset |
 | Zero span | the step's own `read_length`, `adc_trig_offset` (and `sample_period_us` / `capture_length_us`) | `zero_span_parity` only | strobe: 5.0 us window, 0.488 us offset, 20 us sample period; decimated: 80 us window, 0.488 us offset, 100 us capture |
 
 `auto_coherence` sets its own single-shot window (`ss_readout_time` 15 us, `ss_adc_offset` 1 us)
@@ -160,7 +160,7 @@ tone covers the `ro_chs` windows.
 ## Known issues
 
 - The regime-A window bug (fixed 2026-10-15, see [History](#history)) affects every averaged
-  regime-A record, `t1_ss` population and zero-span record taken before that date.
+  regime-A record, `t1_single_shot` population and zero-span record taken before that date.
 - `ZeroSpanParity` decimated: the zero-span notes report that a loopback test saw samples
   return at about the tProc rate instead of `soccfg` `f_output`. The old declaration (1.4x more
   samples than planned) is the likely explanation, not yet confirmed by a new loopback; sidecars

@@ -84,7 +84,7 @@ fitted-T scatter was the same within 1%.
    lies along I;
 2. exact empirical CDFs of the rotated I of each class (every shot counts, no binning);
 3. contrast curve `CDF_g(t) - CDF_e(t)` (per-class normalised; rule g := I <= t, e := I > t, the
-   rule `t1_ss` applies); its maximum is the printed "fidelity", and the threshold is the midpoint
+   rule `t1_single_shot` applies); its maximum is the printed "fidelity", and the threshold is the midpoint
    between the maximising shot value and the next shot value (`cdf_gap_threshold`). The
    comparison uses integer counts, so equal maxima are resolved the same way every time (the
    lowest one wins) and the result does not depend on the order of the shots. If the e cloud
@@ -102,7 +102,7 @@ title reads "Contrast C = ... (F_assign = ...)" and its h5 saves both per read
 (`contrast_hist<r>`, `assignment_fidelity<r>`; docs/experiments/single_shot.md#outputs). The
 display clips the value to at most 1.0.
 
-`single_shot` prints `angle` (theta) and `threshold`; `t1_ss` reuses them to classify its shots.
+`single_shot` prints `angle` (theta) and `threshold`; `t1_single_shot` reuses them to classify its shots.
 
 `hist_process(..., normalize="pooled" | "per_class", print_fidelities=False)` merges the QM-team
 version (pooled normalisation, used by `single_shot`) and the version relocated from the

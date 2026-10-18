@@ -1,5 +1,7 @@
 # t2_ramsey
 
+Recipe: `R.t2_ramsey(...)` (`qicklab.runs.recipes`; every keyword with its default and unit is in the docstring, `help(R.t2_ramsey)`). Session groups: [step table](../running_a_session.md#steps). Generated parameter tables come in phase 6.
+
 Class `T2R` (see `qicklab.experiments.t2_ramsey`); fit functions in
 `qicklab.analysis.ramsey`. Regime **A**.
 

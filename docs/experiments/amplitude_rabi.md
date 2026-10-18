@@ -1,5 +1,7 @@
 # amplitude_rabi
 
+Recipe: `R.amplitude_rabi(...)` (`qicklab.runs.recipes`; every keyword with its default and unit is in the docstring, `help(R.amplitude_rabi)`). Session groups: [step table](../running_a_session.md#steps). Generated parameter tables come in phase 6.
+
 Classes `AmplitudeRabiFF` (hardware gain sweep) and `AmplitudeRabiFF_N` (software gain
 sweep), see `qicklab.experiments.rabi`; cosine fit in `qicklab.analysis.fitting`. Regime **A**.
 

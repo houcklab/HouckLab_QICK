@@ -1,5 +1,7 @@
 # t1_single_shot: single-shot T1 (T1_SS)
 
+Recipe: `R.t1_single_shot(...)` (`qicklab.runs.recipes`; every keyword with its default and unit is in the docstring, `help(R.t1_single_shot)`). Session groups: [step table](../running_a_session.md#steps). Generated parameter tables come in phase 6.
+
 ## What it measures
 
 T1 measured from thresholded single shots instead of averaged IQ. At each wait time

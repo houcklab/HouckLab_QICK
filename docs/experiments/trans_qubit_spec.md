@@ -1,5 +1,7 @@
 # trans_qubit_spec
 
+Recipe: `R.trans_qubit_spec(...)` (`qicklab.runs.recipes`; every keyword with its default and unit is in the docstring, `help(R.trans_qubit_spec)`). Session groups: [step table](../running_a_session.md#steps). Generated parameter tables come in phase 6.
+
 Class `QubitSpecSliceFF` (see `qicklab.experiments.qubit_spec`). Regime **A**.
 
 ## What it measures

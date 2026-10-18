@@ -24,9 +24,9 @@ Audit reports: scratchpad/audit/{runners,charge_parity_runs,experiments_basic,ex
 HouckLab_QICK/
 ├── pyproject.toml, README.md, CLAUDE.md, AGENTS.md
 ├── devices/              __init__.py (load_device), _template.py, CSTQ03.py
-├── runners/              session.py (the one per-session script)
+├── runners/              <device>_session.py (the one per-session script; CSTQ03_session.py)
 ├── qicklab/
-│   ├── __init__.py       re-exports Session, connect, run, STEPS
+│   ├── __init__.py       EMPTY (users import qicklab.core.session; STEPS is qicklab.runs.STEPS) — amended 2026-10-17 in 5a
 │   ├── hardware/         rfsoc.py board.py yoko.py attenuator.py sc5510a.py pnax.py synthhd.py
 │   ├── core/             experiment.py device.py context.py config.py session.py params.py
 │   │                     acquisition.py readout.py active_reset.py schedule.py io.py
@@ -166,7 +166,7 @@ hardware < core < analysis < experiments < runs < twpa. analysis never imports e
 - Ledger: every top-level statement of every old module is accounted for (moved / deleted-with-reason / replaced).
 
 ## Known bugs — NOT fixed in the refactor (reported to user; candidates for separate commits)
-ARV `cmp_offset=1<<24` (fix via shared mixin — planned separate commit); ZSP `declare_readout` missing `ro_ch`; `run_charge_dispersion_ramsey` KeyError `df`; `kappa_mhz` /1e6 (2 places); ChargeDispersion wait 1/df vs 1/(2df); T2R ignores flattop; validate_ZSP B2–B4; hist threshold off-by-one-bin; MRC not same sequence as MR; mutated caller dicts (probe_freq, setdefault); yoko not restored after sweeps; `step=int(max_gain/n)` truncation.
+ARV `cmp_offset=1<<24` (fix via shared mixin — planned separate commit); ZSP `declare_readout` missing `ro_ch`; `run_charge_dispersion_ramsey` KeyError `df`; `kappa_mhz` /1e6 (2 places); ChargeDispersion wait 1/df vs 1/(2df); T2R ignores flattop; validate_ZSP B2–B4; hist threshold off-by-one-bin; MRC not same sequence as MR; mutated caller dicts (probe_freq, setdefault); yoko not restored after sweeps; `step=int(max_gain/n)` truncation; `run_interleaved_coherence` returns early when no sub-experiment is enabled without restoring `ctx.config` (regime B left behind; guarded by `core.session.run_step`, found in 5a 2026-10-17).
 
 ## Verification ladder (every phase)
 1. `ruff check .` + `ruff format --check .` (qicklab, devices, runners, tests, scripts)

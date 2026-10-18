@@ -1,5 +1,7 @@
 # cw_tones: constant_two_tone, constant_tone
 
+Recipe: `R.constant_two_tone(...)`, `R.constant_tone(...)` (`qicklab.runs.recipes`; every keyword with its default and unit is in the docstring, `help(R.constant_two_tone)`). Session groups: [step table](../running_a_session.md#steps). Generated parameter tables come in phase 6.
+
 Classes `ConstantTwoTone` and `SingleTone` (see `qicklab.experiments.cw_tones`). Regime **A**.
 
 ## What it measures
@@ -48,7 +50,7 @@ PLAN = [R.constant_two_tone()]              # tones from the device; tone_length
 PLAN = [R.constant_tone()]
 ```
 
-`Session(tones=R.tones(tone_length=151))` sets the two-tone period. From a runner,
+`Session(tones=G.tones(tone_length=151))` sets the two-tone period. From a runner,
 `run_constant_two_tone(ctx)` / `run_constant_tone(ctx)` wait for Enter;
 `run_constant_two_tone(ctx, {"hold_s": 60})` holds for 60 s instead.
 
