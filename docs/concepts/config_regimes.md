@@ -207,7 +207,8 @@ would leak (no current code does).
   the second rebuild at the same point, unconditionally.
 - 2026-08-04: the regime-A window became a runner setting (`Readout_Time`, `ADC_Offset`) instead
   of being hard-coded to 15 us. Details in [readout window](readout_window.md#history).
-- The refactor (design v3) turns the fixed switch into an automatic per-step switch.
+- 2026-10: the session layer (`run()`) replaced the fixed switch with an automatic per-step
+  switch.
 
 ## Known issues
 
@@ -228,5 +229,5 @@ would leak (no current code does).
   `current_voltage` in their cfg still shows the session value. See
   [hardware](../hardware.md#charge-bias-yoko).
 - `interleaved_coherence` with every sub-experiment disabled returns early from the single-shot
-  config without restoring the regime-A one (design.md known bugs). `run_step` guards it: the
+  config without restoring the regime-A one (a known legacy bug). `run_step` guards it: the
   config object a step was handed is put back after the step ([how run switches](#how-run-switches)).

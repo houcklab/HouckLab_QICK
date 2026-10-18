@@ -4,7 +4,9 @@ The order in which a fresh device is characterised, from an amplifier that works
 specialised charge-parity measurements. Each stage lists the step(s) to run, the knobs that
 matter, what a good result looks like (with CSTQ03 numbers as examples) and what to write back
 into the device file. Session mechanics are in [running_a_session.md](running_a_session.md);
-device fields in [adding_a_device.md](adding_a_device.md).
+device fields in [adding_a_device.md](adding_a_device.md); every knob named below, with units
+and default, in [parameters.md](parameters.md) (its first table holds the ones most sessions
+change).
 
 ```
 0 device file + dry run
@@ -95,13 +97,13 @@ spectroscopy-type step and with the regime-A base config.
 
 | knob | `spec` group key | CSTQ03 value | notes |
 |---|---|---|---|
-| span | `SpecSpan` | 10 MHz (+/-) | centred on `Qubit.freq` |
-| points | `SpecNumPoints` | 201 | |
+| span | `spec_span` (cfg `SpecSpan`) | 10 MHz (+/-) | centred on `Qubit.freq` |
+| points | `spec_num_points` (cfg `SpecNumPoints`) | 201 | |
 | drive gain | `gain` | 800 | the gain `two_tone_spec` actually plays (DAC units) |
-| base-config spec gain | `qubit_gain` | 1000 | used by `constant_two_tone`, and by `charge_sweep`, `charge_dispersion_quasicw` and `two_tone_charge_dispersion_quasicw` when `Gauss` is False; regime-A `qubit_gain` means spec gain, not pi gain |
-| drive shape | `Gauss`, `sigma`, `qubit_length` | flat 50 us (`Gauss` False) | long weak drive = narrow line; `qubit_length` ignored when `Gauss` is True |
+| base-config spec gain | `qubit_gain` | 1000 | used by `constant_two_tone`, and by `charge_sweep`, `charge_dispersion_quasicw` and `two_tone_charge_dispersion_quasicw` when `gauss` is False; regime-A `qubit_gain` means spec gain, not pi gain |
+| drive shape | `gauss` (cfg `Gauss`), `sigma`, `qubit_length` | flat 50 us (`gauss` False) | long weak drive = narrow line; `qubit_length` ignored when `gauss` is True |
 | averaging | `reps`, `rounds`, `relax_delay` | 20, 10, 2500 us | |
-| peak finding | `min_sep_MHz` | 0.2 MHz | minimum separation for two peaks (doublets) |
+| peak finding | `min_sep_mhz` | 0.2 MHz | minimum separation for two peaks (doublets) |
 
 Good: after projection onto the principal IQ axis, a baseline near 0 and the qubit as a positive
 bump. AutoCoherence's acceptance criterion is a useful number: peak SNR >= 4, where noise is
@@ -118,7 +120,7 @@ so the outer 15% on each side is baseline.
 If nothing is seen:
 
 1. Check transmission first: no readout, no spectroscopy.
-2. Widen `SpecSpan`.
+2. Widen `spec_span` (`G.spec(spec_span=...)`).
 3. Run `spec_gain_length_sweep`: every `qubit_length` in `sweep_lengths` (CSTQ03: 10 to 100 us in
    10 us steps) times every gain in `sweep_gains` (200 to 5000 in steps of 100). That is 490
    spectra; trim the lists first.
@@ -195,21 +197,25 @@ Pages: [t1](experiments/t1.md), [t2_ramsey](experiments/t2_ramsey.md),
 
 | step | group | CSTQ03 session values | notes |
 |---|---|---|---|
-| `t1` | `coherence` | `T1_step` 5 us x 100 points, reps 20 x rounds 20, relax 3000 us | span should cover several T1 |
-| `t2_ramsey` | `coherence` | `T2_step` 0.1 us x 100 points, `freq_shift` 0, `f_virt_mhz` None | 5 virtual fringes over the window by default ([t2_ramsey](experiments/t2_ramsey.md#virtual-detuning)) |
-| `t2_echo` | `echo` | `T2_max_us` 20, 121 points, 25 x 25, relax 500 us, `num_pi_pulses` 1 | `num_pi_pulses` must be odd and >= 1 (`ValueError` otherwise; see [t2_echo](experiments/t2_echo.md#refocusing-condition)) |
+| `t1` | `coherence` | `t1_step` 5 us x 100 points, reps 20 x rounds 20, relax 3000 us | span should cover several T1 |
+| `t2_ramsey` | `coherence` | `t2_step` 0.1 us x 100 points, `freq_shift` 0, `f_virt_mhz` None | 5 virtual fringes over the window by default ([t2_ramsey](experiments/t2_ramsey.md#virtual-detuning)) |
+| `t2_echo` | `echo` | `t2_max_us` 20, 121 points, 25 x 25, relax 500 us, `num_pi_pulses` 1 | `num_pi_pulses` must be odd and >= 1 (`ValueError` otherwise; see [t2_echo](experiments/t2_echo.md#refocusing-condition)) |
 
+<!-- lint-keywords: session:coherence session:echo -->
 `repetitions` in the `coherence` and `echo` groups repeat the whole measurement (1000 and 3000 in
 the CSTQ03 session, meant for long unattended runs). Use 1-3 for a benchmark.
 
+<!-- lint-keywords: session:coherence session:echo -->
 Rules of thumb: `relax_delay` >= 3-5 x T1 (CSTQ03 Q2 T1 was about 50 us on 2026-08-04, so 250 us
 is 5 x T1); the T1 sweep should reach several T1.
 
+<!-- lint-keywords: recipe:auto_coherence -->
 Alternative: `auto_coherence` runs Rabi, readout and single-shot optimisation, then T1, T2 and T2E,
 and writes a summary json with every calibrated value. CSTQ03 settings: `skip_sweet_spot_search`
 True (use the device frequency and hold the bias), `calibrate_qubit_freq` False, `ss_gain_span_frac`
-0.6, `ss_gain_pts` 100, `auto_readout_opt` True, `T1_step` 5 us, `T2_step` 0.1 us, `T2_expts` 401,
-`T2E_max_us` 500, 3 repetitions of each.
+0.6, `ss_gain_pts` 100, `auto_readout_opt` True, `t1_step` 5 us, `t2_step` 0.1 us, `t2_expts` 401,
+`t2e_max_us` 500, and 3 repetitions of each (`t1_repetitions`, `t2_repetitions`,
+`t2e_repetitions`).
 
 Outputs: the fitted T1/T2 values are in the png and console only (not in the h5) for `t1`,
 `t2_ramsey` and `t2_echo`; the AutoCoherence summary json does hold them. Write `Qubit.t1_us`.
@@ -266,7 +272,8 @@ Before the first record ([experiments/modified_ramsey.md](experiments/modified_r
    at these settings" and excluded), and HMM, ACF and PSD rates agree within 3x.
 
 `modified_ramsey_control` repeats the measurement at the charge sweet spot as a null: the same
-sequence and analysis, built from `ModifiedRamsey_params` (pass it), so a valid null reads
+sequence and analysis, taken from the `R.modified_ramsey` Step passed as `ramsey=` (pass the
+same Step the record used), so a valid null reads
 `identifiable = False`, r(1) near 0 and a lag-covariance ratio to the MR record near 0 (its ACF
 amplitude is NaN: there is nothing to fit).
 

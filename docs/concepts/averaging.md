@@ -11,19 +11,21 @@ in single-shot programs, silently loses data.
 | `reps` | hardware, one tProc program | the tProc loops the body `reps` times; QICK averages the readouts | `AveragerProgram` reads `cfg["reps"]` in `make_program()` at construction: set it before building the program |
 | `rounds` | software | the same program is run `rounds` times; results are averaged in Python | each round is a new program start (see the race below); raw per-shot buffers keep only the **last** round |
 | `expts` | hardware sweep | number of points of a register sweep (`RAveragerProgram`: frequency, gain, wait) | total shots = `reps x rounds x expts` |
-| `shots` (`Shots` in recipes) | single-shot programs | number of single shots; the program sets `reps = shots` and `rounds = 1` | `SingleShotProgram`, `UndrivenSingleShot`; `t1_single_shot` uses `reps` as shots per wait |
+| `shots` (`Shots` in the legacy `SS_params`) | single-shot programs | number of single shots; the program sets `reps = shots` and `rounds = 1` | `SingleShotProgram`, `UndrivenSingleShot`; `t1_single_shot` uses `reps` as shots per wait |
 | `soft_avgs` | QICK, decimated acquisition | number of captures averaged by `acquire_decimated` | qick takes `cfg["rounds"]` over `soft_avgs` if both exist |
-| `repetitions` | experiment loop | run the whole experiment N times; each run writes its own h5/png/json | coherence recipes (`T1T2_params`, `T2E_params`); also, legacy cross-coupling, the loop count of `trans_qubit_spec` and `charge_dispersion_ramsey` |
-| `Repeat` | experiment loop | `undriven_single_shot` passes; each pass its own files, only the last is displayed | |
+| `repetitions` | experiment loop | run the whole experiment N times; each run writes its own h5/png/json | a keyword of the `coherence` and `echo` groups (legacy `T1T2_params`, `T2E_params`) and of the `t1`, `t2_ramsey`, `t2_echo`, `t1_t2e`, `t1_t2r_t2e` and `t1_single_shot` recipes; also the loop count of `trans_qubit_spec` and `charge_dispersion_ramsey`, and legacy cross-coupling (`charge_dispersion_quasicw` uses `repetitions` for its shot count, the cfg `reps`) |
+| `repeat` (`Repeat` in the legacy `US_params`) | experiment loop | `undriven_single_shot` passes; each pass its own files, only the last is displayed | |
 | `num_cycles` | experiment loop | records of `modified_ramsey`, `modified_ramsey_control`, `two_tone_charge_dispersion_quasicw` | `ss_recalib_every_n_cycles`, `validation_controls_every_n_cycles` count these |
-| `cycles` | experiment loop | `interleaved_coherence` cycles (undriven SS -> T1 -> T2R -> T2E) | inner `Repeat` / `repetitions` forced to 1 |
+| `cycles` | experiment loop | `interleaved_coherence` cycles (undriven SS -> T1 -> T2R -> T2E) | inner `repeat` / `repetitions` forced to 1 |
 | `reps_per_chunk`, `n_chunks` | `zero_span_parity` strobe | shots per program, programs per record | record length = `reps_per_chunk x n_chunks x sample_period_us x 1e-6` s (about 12 s for 10000 x 60 x 20 us); `reps_per_chunk` is not bounded by `avg_maxlen` (the averages buffer is streamed), only by a 2e7 memory cap |
 | `n_captures` | `zero_span_parity` decimated | back-to-back decimated captures, concatenated | boundaries recorded in `gap_indices` |
 | `average_shots` | analysis (`undriven_single_shot`) | average n consecutive shots into one time-series point | noise falls as 1/sqrt(n), but switching faster than n x rep period averages away; pick n on the plateau of the rate-vs-averaging panel |
 | `average_n_shots` | analysis (`modified_ramsey`) | bin size of the legacy hard-threshold plot only | keep well below one dwell (see the Modified Ramsey page) |
 
 The recipe layer uses one snake_case spelling per concept (for example `shots`, `repeat`) and
-maps it to the legacy key inside the run function. The cfg keys themselves are unchanged.
+maps it to the legacy key the run function reads (`R.LEGACY_KEYS`). The cfg keys themselves are
+unchanged. [parameters.md](../parameters.md) lists, per step, which of these counts a keyword
+is (the `shots` / `points` / `1` units column).
 
 ## reps vs rounds: prefer reps
 

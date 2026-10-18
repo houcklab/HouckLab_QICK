@@ -5,11 +5,11 @@ device, picks the qubit, sets a few shared knobs and lists the steps to run, in 
 physics lives in `qicklab`; all chip numbers live in `devices/<device>.py`
 ([adding_a_device.md](adding_a_device.md)). You should never need to edit either to take data.
 
-> Status (2026-10-17): `Session`, `run`, `connect`, `run_step` and the dry run are in
-> `qicklab/core/session.py`; the CSTQ03 session runner is `runners/CSTQ03_session.py`
-> ([below](#the-cstq03-session-runner)); the legacy flag runner `runners/CSTQ03_BFC.py` was
-> deleted in phase 5b. Every recipe keyword is in its function's docstring (`help(R.t1)`); the generated
-> tables (`docs/parameters.md`, each [experiments/](experiments/README.md) page) come in phase 6.
+> `Session`, `run`, `connect`, `run_step` and the dry run are in `qicklab/core/session.py`; the
+> CSTQ03 session runner is `runners/CSTQ03_session.py` ([below](#the-cstq03-session-runner)).
+> Every recipe keyword is in its function's docstring (`help(R.t1)`) and, with units, default
+> and meaning, in [parameters.md](parameters.md) (which opens with the knobs most sessions
+> change) and in the recipe table at the top of each [experiments/](experiments/README.md) page.
 
 ## The session file
 
@@ -52,7 +52,7 @@ Nothing touches hardware until `run()` is called. Importing the file is safe.
 ### The CSTQ03 session runner
 
 `runners/CSTQ03_session.py` is the session file for CSTQ03. It replaced the legacy flag runner
-`runners/CSTQ03_BFC.py` (deleted in phase 5b; frozen in
+`runners/CSTQ03_BFC.py` (deleted 2026-10-18; frozen in
 `tests/regression/fixtures/cstq03_legacy_runner.py.txt`). It has three blocks:
 
 1. `SESSION`: qubits, bias, `yoko_fixed`, and the shared groups. Only the legacy runner's
@@ -144,6 +144,10 @@ live on the session, not on one step. This reproduces the legacy runner, where e
 | `echo` | `T2E_params` | `t2_echo`, `t1_t2e`, `t1_t2r_t2e`, `interleaved_coherence` |
 | `single_shot` | `SS_params` | the regime-B config builder (shots, relax delay, pi/2 flag), `single_shot`, `t1_single_shot`, `qubit_optimize`, `interleaved_coherence` |
 
+Every keyword of every group, with its default and units:
+[parameters.md, Session](parameters.md#session). The summary line above each step page's recipe
+table names the groups that step reads.
+
 ### Precedence
 
 ```
@@ -185,7 +189,8 @@ design accepts them as library values.
 
 Recipes are keyword-only functions: a misspelled keyword raises `TypeError` instead of being
 ignored. PyCharm's quick-doc (Ctrl+Q) on `R.t1` shows every parameter with its default and
-units.
+units; [parameters.md](parameters.md#step-recipes) has the same for every step, with the
+`None` defaults' fallbacks spelled out.
 
 ## The PLAN
 

@@ -6,11 +6,16 @@ see, what they save and what they hand to later steps.
 
 - New to the code base: read [running_a_session.md](../running_a_session.md) first, then
   the page of the step you want to run.
-- Changing three numbers before a run: jump to the **Parameters** table of the step.
-- Each step page opens with a **Recipe** line naming its `R.<step>` function; the CSTQ03
+- Changing three numbers before a run: the recipe table at the top of the step page, or the
+  [knobs table](../parameters.md#knobs-you-change-every-session) of the parameter reference.
+- Each step page opens with a generated block: a **Recipe** line naming its `R.<step>`
+  function, its regime, run function and session groups, then a table of every keyword with
+  its default, units and meaning. The block sits between two `params:begin` / `params:end`
+  HTML comments and is rewritten by `python scripts/gen_docs.py` from
+  `qicklab/core/params.py` and the recipe signature; edit those, not the block. The CSTQ03
   values of every step are in `runners/CSTQ03_session.py` (`STEP[...]`).
-- Every parameter with units and defaults will also be in `docs/parameters.md`, generated
-  from the parameter registry (refactor phase 6; not present yet).
+- Every parameter, of every step, group and device field, is in
+  [parameters.md](../parameters.md), generated from the same registry.
 
 ## Running a step
 
@@ -35,9 +40,10 @@ run(SESSION, PLAN)                 # run(SESSION, PLAN, dry_run=True) compiles e
 The snippets on the experiment pages show only the `PLAN` lines; imports and `SESSION` are
 as above. Values resolve as library recipe default < session group
 (`Session(coherence=G.coherence(...))`, see
-[shared groups](../running_a_session.md#shared-groups)) < keyword on the step. Recipe
-keywords are the snake_case form of the legacy keys in each **Parameters** table; the
-final spelling comes from the parameter registry.
+[shared groups](../running_a_session.md#shared-groups)) < keyword on the step. The
+hand-written **Parameters** section further down each page describes the legacy keys the run
+function reads (`T1_step`, `Shots`, ...); the recipe table at the top lists the keyword for
+each, usually its snake_case form (`t1_step`, `shots`; `R.LEGACY_KEYS` holds the exact map).
 
 ## Config regimes A and B
 

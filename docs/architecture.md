@@ -4,12 +4,12 @@ How qicklab is put together, why it is layered the way it is, and the QICK/tProc
 code depends on. Read [running_a_session.md](running_a_session.md) first if you only want to
 take data; this page is for people who change the code.
 
-> Status (2026-10-17): the `qicklab_refactor` branch is mid-migration. The session layer
-> (phase 5a: `core.device`, `core.session`, `core.fakes`, `runs.groups`, `runs.recipes`,
-> `devices/CSTQ03.py`, `runners/CSTQ03_session.py`) is in, and the legacy flag runner
-> `runners/CSTQ03_BFC.py` was deleted in 5b (its parameters stay frozen in
-> `tests/regression/fixtures/cstq03_legacy_runner.py.txt`). `core.params`, `scripts/gen_docs.py` and `docs/parameters.md` are phase 6 and not
-> present yet.
+> Status (2026-10-18): the session layer (`core.device`, `core.session`, `core.fakes`,
+> `runs.groups`, `runs.recipes`, `devices/CSTQ03.py`, `runners/CSTQ03_session.py`) replaced the
+> legacy flag runner `runners/CSTQ03_BFC.py`, which is deleted (its parameters stay frozen in
+> `tests/regression/fixtures/cstq03_legacy_runner.py.txt`). The parameter registry
+> `core.params` lists every knob; `scripts/gen_docs.py` generates `docs/parameters.md` and the
+> recipe tables of the step pages from it ([below](#parameter-registry-and-generated-docs)).
 
 ## Package layout and layering
 
@@ -59,6 +59,8 @@ legacy call shapes: `connect()` calls `build_context(...)` and a Step calls its 
 | `qicklab/core/fakes.py` | `FakeSoc`, `FakeSocCfg`, `FakeYoko`, `STATE`, `set_board` | used by `run(..., dry_run=True)` and by the regression harness (`tests/regression/capture.py` re-exports them) |
 | `qicklab/runs/groups.py` (`G`) | one keyword-only builder per session group (`G.coherence(...)`, ...), `KEYS`, `resolve` | returns the legacy dict (`T1T2_params`, ...) |
 | `qicklab/runs/recipes.py` (`R`) | one keyword-only recipe per canonical step, `STEPS`, `LEGACY_KEYS`, `FROZEN_DIFFERENCES` | a recipe returns a `Step` whose `params` are the legacy-keyed dicts its `run_*` reads |
+| `qicklab/core/params.py` | `PARAMS` (`(key, scope)` -> `Param`), `entries`, `UNRECORDED_CFG`, `RECORD_ONLY_CFG` | bookkeeping only: nothing reads it at run time ([registry](#parameter-registry-and-generated-docs)) |
+| `scripts/gen_docs.py` | writes `docs/parameters.md` and the step pages' recipe tables; `--check`, `--lint` | not a package; imports `qicklab` |
 | `runners/<device>_session.py` | `SESSION`, `STEP` (the device's step values), `PLAN` | see [running_a_session.md](running_a_session.md#the-cstq03-session-runner) |
 
 Why: the legacy tree star-imported everything (`from runs import *` pulled ~110 names,
@@ -296,6 +298,55 @@ Side effect to know about: `CavitySpecFF.acquire()` sweeps `cfg["pulse_freq"]` i
 `display(fit=True)` rewrites it with the fitted minimum. Code that runs several transmission
 slices (charge transmission sweep) resets it to the centre for every slice.
 
+## Parameter registry and generated docs
+
+`qicklab/core/params.py` holds `PARAMS`: one `Param(key, scope, units, meaning, layer,
+read_by, notes)` per knob, keyed by `(key, scope)`. A word that means two things gets one entry
+per scope.
+
+| scope | key | example |
+|---|---|---|
+| `device` | `<Class>.<field>` of the device model | `Qubit.freq`, `Setup.yoko_addr` |
+| `session` | a `Session(...)` field other than the groups | `qubit_pulse`, `bias_v` |
+| `session:<group>` | a keyword of the group builder `G.<builder>(...)` | `relax_delay` in `session:coherence` |
+| `recipe:<step>` | a keyword of `R.<step>(...)`; `zero_span_parity`'s dict keys as `<keyword>.<key>` | `df` in `recipe:modified_ramsey` |
+| `cfg`, `cfg:<variant>` | a key of the flat experiment cfg; a variant scope when the key means something else for some classes | `qubit_gain` (spectroscopy gain) vs `qubit_gain` in `cfg:single_shot` (pi gain) |
+
+Defaults are not stored in the registry; the generator reads them from the recipe, group,
+`Session` and device-dataclass signatures. Nothing reads the registry at run time, so it cannot
+change a program or a saved file. Three checks keep it true:
+
+- `tests/test_params_registry.py`: every cfg key the regression golden records a class reading
+  or writing (`cfg_access`, both boards) is registered with that class in `read_by`; every
+  recipe keyword, group keyword and device-model field is registered; every entry has units;
+  nothing is registered without a source, except the cited `UNRECORDED_CFG` allowlist (keys of
+  code paths no regression label reaches). Dead keys (`tests/regression/README.md`, "Allowed
+  cfg diffs") stay out. An AST scan of literal cfg keys under `qicklab/experiments`,
+  `qicklab/analysis` and `qicklab/runs` warns about any key the registry lacks.
+- `scripts/gen_docs.py` rewrites `docs/parameters.md` and, on each step page, only the text
+  between `<!-- params:begin -->` and `<!-- params:end -->`. The output has no dates, so a
+  second run changes nothing. `tests/test_gen_docs.py` fails while a committed file differs
+  from the generator's output; `python scripts/gen_docs.py --check` lists them.
+- `python scripts/gen_docs.py --lint` checks the hand-written pages (`docs/`, `docs/concepts/`,
+  `docs/experiments/`, `docs/devices/`): every keyword of an `R.<step>(...)`, `G.<builder>(...)`,
+  `Session(...)` or device-class call they show, and every name in the first column of a
+  parameter table (a table with a Default or Units column), must be registered; a bare legacy
+  key that `R.LEGACY_KEYS` / `G.KEYS` maps to a keyword counts only on the step pages, whose
+  Parameters sections describe the legacy dicts. Elsewhere, and in any column headed Keyword(s),
+  `<x> group key` or "session values" on every page, a legacy or cfg key may appear only as an
+  alias, in parentheses or after the word "legacy" (`` `shots` (`Shots` in the legacy
+  `SS_params`) ``), and a keyword cell must name at least one real keyword. Such a column is
+  scoped: `` `spec` group key `` takes only `G.spec` keywords; in a table with a "step" or "group"
+  column, each row takes the keywords of the recipe and group it names; otherwise any keyword.
+  A paragraph preceded by `<!-- lint-keywords: recipe:auto_coherence -->` (one or more registry
+  scopes) may backtick only keywords of those scopes, step and group names and device fields.
+  Every link `parameters.md#<anchor>` must name a heading that the generator writes, so renaming
+  a heading in `render_parameters()` fails until the pages that link it are updated.
+  `tests/test_gen_docs.py` enforces all of these. Backticked cfg keys that the code reads but the
+  registry lacks are reported as warnings. The same test file also fails when one of these
+  pages uses refactor-plan wording (a refactoring step or slice name, a design version, a
+  promise of an API that does not exist yet): such notes belong in `docs/dev/`.
+
 ## Comment policy
 
 Keep: docstrings of three lines or fewer on public symbols; a one-line "why" at an enforced
@@ -322,8 +373,8 @@ Details and limits: `tests/regression/README.md`.
 Rule: behaviour-preserving refactors and bug fixes are separate commits. A refactor commit
 must leave the golden green (only documented dead-key diffs are allowlisted). A fix commit
 changes behaviour on purpose and updates the golden explicitly, with the diff justified in the
-commit. The list of known, unfixed legacy bugs is in the refactor design; each experiment page
-has a "Known issues" section.
+commit. The list of known, unfixed legacy bugs is in `docs/dev/refactor-2026-10/design.md`
+("Known bugs"); each experiment page has a "Known issues" section.
 
 ## Adding an experiment, a step, a recipe
 
@@ -348,12 +399,17 @@ has a "Known issues" section.
    session group (`"coherence"`; `keys` are the step's overrides of it) or the run's own dict
    argument, and `keys` maps legacy keys to keywords. `STEPS` (in `qicklab.runs.recipes`,
    re-exported as `qicklab.runs.STEPS`) is built from these registrations.
-5. Parameter registry: add every new key to `PARAMS` in `qicklab/core/params.py`, keyed by
-   `(key, scope)` with units. `tests/test_params_registry.py` records the keys each experiment
-   actually reads at runtime and fails if one is missing.
+5. Parameter registry: add every new recipe keyword (`_recipe(...)` in
+   `qicklab/core/params.py`, with units and a one-line meaning) and every cfg key the
+   experiment reads (the `cfg` scope, the class in `read_by`). `tests/test_params_registry.py`
+   fails until the registry matches the recipe signature and, once a regression label runs the
+   step, the cfg keys the golden records the class reading.
 6. Docs: add `docs/experiments/<step>.md` (template: What it measures, Pulse sequence, How to
-   run, Parameters, Outputs, Analysis, Findings & notes, Known issues) and regenerate tables
-   with `python scripts/gen_docs.py`.
+   run, Parameters, Outputs, Analysis, Findings & notes, Known issues) with one line starting
+   `` Recipe: `R.<step>(...)` `` where the recipe table goes (or add the step to `PAGE_OF` in
+   `scripts/gen_docs.py` to document it on another step's page), then run
+   `python scripts/gen_docs.py`: it replaces that line with the generated table between the
+   params markers and regenerates `docs/parameters.md`.
 7. Regression: add a run label so the new step is fingerprinted (`driver_qicklab` writes it
    into the golden; `driver_plan` must reproduce it through the recipe).
 
@@ -371,7 +427,9 @@ python -m pytest tests/regression -q           # golden only
 REGRESSION_LABELS=RunT1,RunT2 python -m pytest tests/regression -q
 REGRESSION_DRIVERS=plan python -m pytest tests/regression -q   # only the Session/PLAN replay
 REGRESSION_UPDATE=1 python -m pytest tests/regression -q   # rewrite golden: fix commits only
-python scripts/gen_docs.py                     # regenerate docs/parameters.md
+python scripts/gen_docs.py                     # regenerate docs/parameters.md and the step-page tables
+python scripts/gen_docs.py --check             # list generated files that are out of date
+python scripts/gen_docs.py --lint              # parameter names the hand-written pages use vs the registry
 ```
 
 `tests/hardware/verify_modified_ramsey_timing.py` is hardware-in-the-loop and not collected by

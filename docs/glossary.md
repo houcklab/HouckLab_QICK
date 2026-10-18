@@ -34,7 +34,9 @@ also read them.
 
 ### Recipe
 A keyword-only function in `qicklab.runs.recipes` (`R.t1(...)`) with documented parameters and
-defaults. It returns a `Step`. Unknown keywords raise `TypeError`.
+defaults. It returns a `Step`. Unknown keywords raise `TypeError`. Every keyword, with units and
+default, is in the recipe table at the top of the step's page and in
+[parameters](parameters.md#step-recipes).
 
 ### Step
 One entry of a plan: a named run function, its regime (A or B), the groups it needs and its
@@ -47,6 +49,13 @@ allowed; `run(session, PLAN)` executes it in the written order.
 
 ### Precedence
 Recipe default < session group < keyword on the step.
+
+### Parameter registry
+`PARAMS` in `qicklab.core.params`: one entry per knob, keyed by name and scope (device field,
+session field, session group, step recipe, experiment cfg), with units, meaning and the code
+that reads it. [parameters.md](parameters.md) is generated from it by `scripts/gen_docs.py`.
+A name that means two things (`qubit_gain`: spectroscopy gain or pi gain) has one entry per
+scope. See [architecture](architecture.md#parameter-registry-and-generated-docs).
 
 ### Regime (A, B)
 Which of the two config builders produced the config a step sees: A = measurement config,
@@ -158,7 +167,7 @@ Project label used in branch names and data folders (`2026-10-01_BFC_cooldown`).
 spell it out.
 
 ## Averaging words
-`reps`, `rounds`, `expts`, `shots`, `soft_avgs`, `repetitions`, `Repeat`, `num_cycles`, `cycles`:
+`reps`, `rounds`, `expts`, `shots`, `soft_avgs`, `repetitions`, `repeat`, `num_cycles`, `cycles`:
 see the table in [averaging](concepts/averaging.md#vocabulary).
 
 ## Readout and IQ

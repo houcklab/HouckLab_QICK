@@ -269,8 +269,8 @@ copy devices\CSTQ04.py devices\archive\CSTQ04_2026-12-01.py
 then change `cooldown`, `data_root` and the qubit values in `devices/CSTQ04.py`. Archive files are
 never deleted and never imported by sessions; they are the record of what each cooldown used
 (`devices/archive/README.md`). CSTQ03's earlier "v2b nu cell" table is archived as
-`devices/archive/CSTQ03_v2b.py` (until phase 5b it was the unused `Qubit_Parameters_v2b` of the
-legacy runner `runners/CSTQ03_BFC.py`).
+`devices/archive/CSTQ03_v2b.py` (until 2026-10-18 it was the unused `Qubit_Parameters_v2b` of the
+legacy runner `runners/CSTQ03_BFC.py`, now deleted).
 
 Also update `docs/devices/<NAME>.md`: move the old parameter table to an "Archived" section and
 start the new cooldown's table.

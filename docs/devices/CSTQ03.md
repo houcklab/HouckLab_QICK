@@ -186,7 +186,7 @@ was recommended on the premise that it keeps echo_null as a decisive control, bu
 0.1 us the finite-pulse echo is not a null at either k (skipped at k = 3, not a null at k = 5;
 see [the echo null](../experiments/modified_ramsey.md#echo-is-a-null-only-for-short-pulses)).
 The echo becomes a usable null only at shorter sigma (sigma = 0.04 us, k = 3: echo 0.063
-against main 0.960). The legacy runner (deleted in 5b) had `df` = 1, `tau_harmonic_k` = 1,
+against main 0.960). The legacy runner (`runners/CSTQ03_BFC.py`, deleted 2026-10-18) had `df` = 1, `tau_harmonic_k` = 1,
 which contradicts this analysis; the session keeps them (`df=1` in `STEP["modified_ramsey"]` of
 `runners/CSTQ03_session.py`, `tau_harmonic_k` = 1 as the `R.modified_ramsey` default).
 
@@ -225,7 +225,7 @@ not with a lower HMM gate. At 250 us relax: 100 000 shots is about 26 s and 10 5
 400 000 shots about 105 s and 42 000 dwells (the old 4.7 s relax-0 record had 1880). Start at
 100k.
 
-The legacy runner (deleted in 5b) had `mr_relax_delay` = 500 us with the comment "5x T1=50us"
+The legacy runner (deleted 2026-10-18) had `mr_relax_delay` = 500 us with the comment "5x T1=50us"
 (5 x 50 = 250) and `mr_reps` = 50 000, while the text recommends 250 us and 100k. The session
 keeps 500 us and 50 000 (the `R.modified_ramsey` defaults, which `STEP["modified_ramsey"]` of
 `runners/CSTQ03_session.py` does not override). Which is intended is not settled.
@@ -262,7 +262,7 @@ and remember 6/kappa = 6/(2 pi x kappa_tot/2pi): 0.19 MHz gives 5 us. ActiveRese
 
 ## Archived: v2b "nu cell" parameter set
 
-Kept in `devices/archive/CSTQ03_v2b.py` (a `Device` with `cooldown="v2b"`, since phase 5b; before
+Kept in `devices/archive/CSTQ03_v2b.py` (a `Device` with `cooldown="v2b"`, since 2026-10-18; before
 that the unused `Qubit_Parameters_v2b` of the legacy runner); not used by any code. Whether
 "v2b nu cell" is a previous cooldown of this chip or a sibling chip is not recorded. The
 v2b slots' "currently working on N" notes (Q1 -> 3, Q2 -> 6, Q3 -> 4, Q4 -> blank, Q5 -> 5,
