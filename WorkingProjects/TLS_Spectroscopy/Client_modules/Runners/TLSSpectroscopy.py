@@ -133,14 +133,6 @@ P3_STEP_RESPONSE = {
     "piecewise_max_multiplier": 1.5,
     "piecewise_desired_response": "unity",
     "readout_after_park": False,
-    "trace_tracking_mode": "ridge",
-    "trace_polarity": None,
-    "trace_shoulder": "auto",
-    "trace_max_jump_mhz": 4.0,
-    "trace_smoothing_window_points": 7,
-    "trace_smoothing_polyorder": 2,
-    "trace_use_smoothed_frequency": True,
-    "trace_min_supported_fraction": 0.8,
     "fit_residual_composition": False,
     "residual_composition_damping": 0.5,
     "live_plot": True,
@@ -284,8 +276,6 @@ def _correction_requirements():
         "flux_channel": int(BaseConfig["ff_ch"]),
         "flux_name": f"ff_ch{BaseConfig['ff_ch']}",
         "fit_ff_ramp_length_us": float(BaseConfig.get("ff_ramp_length", 0.5)),
-        # QubitFluxStepResponse uses 0.5 us when the shared BaseConfig omits
-        # dt_pulseplay; provenance must describe that same executed waveform.
         "fit_dt_pulseplay_us": float(BaseConfig.get("dt_pulseplay", 0.5)),
         "fit_dt_pulsedef_us": float(BaseConfig.get("dt_pulsedef", 0.002)),
         "rise_decay_bump_desired_response": "unity",
@@ -447,6 +437,18 @@ def run_step2_qubit_spec_full_range(outer_folder, soc, soccfg, resonator_lookup_
     return data['data'].get('flux_fit_params')
 
 
+_P3_INTERNAL_SETTINGS = {
+    "trace_tracking_mode": "ridge",
+    "trace_polarity": None,
+    "trace_shoulder": "auto",
+    "trace_max_jump_mhz": 4.0,
+    "trace_smoothing_window_points": 7,
+    "trace_smoothing_polyorder": 2,
+    "trace_use_smoothed_frequency": True,
+    "trace_min_supported_fraction": 0.8,
+}
+
+
 def _step3_common_cfg(p):
     fmin, fmax = _auto_freq_window(p, _baseline_dc_offset(), TARGET_DC_OFFSET)
     n = max(int(round((fmax - fmin) / p["freq_step"])) + 1, 5)
@@ -564,6 +566,7 @@ def _run_step3_experiment(p, soc, soccfg, outer_folder, suffix, flux_tail_compen
                           fit_rise_decay_bump_dc_correction, live_plot,
                           compose_with_applied_flux_tail_compensation=None,
                           composition_damping=None):
+    p = {**_P3_INTERNAL_SETTINGS, **p}
     run_kind = "calibration" if fit_rise_decay_bump_dc_correction else "validation"
     print(f"Running flux-step {run_kind} target dc_offset={TARGET_DC_OFFSET:+.6f} DAC")
     if p.get("t_vec_us") is None:
@@ -780,10 +783,6 @@ def run_step4_long_time_spec(outer_folder, soc, soccfg, correction_json,
         "qubit_freq_start": p["freq_min"], "qubit_freq_stop": p["freq_max"],
         "qubit_freq_step": p["freq_step"],
         "qubit_freq_expts": len(_freq_vec_mhz(p)),
-        # P4 is a production-timing diagnostic.  Explicitly carry the same
-        # 0.5-us waveform rendering grid as the production correction rather
-        # than falling through to FFStepResponseSpecProgram's historical 5-us
-        # default.
         "dt_pulseplay": float(p.get("dt_pulseplay_us", 0.5)),
         "dt_pulsedef": float(p.get("dt_pulsedef_us", 0.002)),
         "opx_hard_flux_steps": bool(p.get("opx_hard_flux_steps", False)),

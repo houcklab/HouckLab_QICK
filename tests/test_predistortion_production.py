@@ -384,15 +384,16 @@ def test_step3_defaults_use_a_local_smooth_curve_without_erasing_the_turnover(
 ):
     runner, _response = _load_step3_runner(monkeypatch)
 
-    assert runner.P3_STEP_RESPONSE["trace_smoothing_window_points"] == 7
-    assert runner.P3_STEP_RESPONSE["trace_smoothing_polyorder"] == 2
-    assert runner.P3_STEP_RESPONSE["trace_use_smoothed_frequency"] is True
+    assert not any(key.startswith("trace_") for key in runner.P3_STEP_RESPONSE)
+    assert runner._P3_INTERNAL_SETTINGS["trace_smoothing_window_points"] == 7
+    assert runner._P3_INTERNAL_SETTINGS["trace_smoothing_polyorder"] == 2
+    assert runner._P3_INTERNAL_SETTINGS["trace_use_smoothed_frequency"] is True
 
 
 def test_step3_calibration_requires_broad_trace_support(monkeypatch):
     runner, response = _load_step3_runner(monkeypatch)
 
-    assert runner.P3_STEP_RESPONSE["trace_min_supported_fraction"] == 0.8
+    assert runner._P3_INTERNAL_SETTINGS["trace_min_supported_fraction"] == 0.8
 
     runner._run_step3_experiment(
         runner.P3_STEP_RESPONSE,
