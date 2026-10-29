@@ -119,7 +119,7 @@ class QubitSpecSliceFF(ExperimentClass):
         plt.plot(x_pts, avgamp0, color='Magenta', label="Amp")
         plt.axvline(x=amp_max, linestyle='--', color='r')
         plt.ylabel("a.u.")
-        plt.xlabel("Qubit Frequency (GHz)")
+        plt.xlabel("Qubit Frequency (MHz)")
         plt.title(self.titlename)
         plt.legend()
 

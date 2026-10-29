@@ -13,7 +13,7 @@ from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.mT1FF
 from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.mT1FF_NoUpdate import T1FF_N
 
 
-soc, soccfg = makeProxy_RFSOC_143()
+soc, soccfg = makeProxy()
 
 #### define the saving path
 
@@ -62,50 +62,62 @@ soc, soccfg = makeProxy_RFSOC_143()
 # }
 
 # Device 3: FTTv02_SiOxJJ (3.0 nm)
-Qubit_Parameters = {
-    # "1": {"Readout": {"Frequency":  6627.759, "Gain": 2000},
-    #       "Qubit": {"Frequency": 1319.966, "Gain": 3841, "sigma": 0.7, "flattop_length": None},  #pi = 3841
-    #       "outerfoldername": "Z:/t1Team/Data/2026-06-27_BFG_recooldown/Device 2 KOH + SiOx JJ (2 CLs)/RFSOC/Q1//"},
-    # # Not found
+# Qubit_Parameters = {
+#     # "1": {"Readout": {"Frequency":  6627.759, "Gain": 2000},
+#     #       "Qubit": {"Frequency": 1319.966, "Gain": 3841, "sigma": 0.7, "flattop_length": None},  #pi = 3841
+#     #       "outerfoldername": "Z:/t1Team/Data/2026-06-27_BFG_recooldown/Device 2 KOH + SiOx JJ (2 CLs)/RFSOC/Q1//"},
+#     # # Not found
+#
+#     "2":
+#     {
+#         "Readout": {"Frequency": 6821.65, "Gain": 3300},
+#         "Qubit":
+#         {
+#             "Frequency": 2854.95,   # pi pulse: 2855.05
+#             "Gain":  18000,         # pi pulse: 18000
+#             "sigma": 0.1,           # pi pulse: 0.1
+#             "flattop_length": None
+#         },
+#         "outerfoldername": "Z:/FluxTeam/Data/FTT02_SiOxJJ_2026_06_25/RFSOC/q2//",
+#         "outerfoldernameT2": "Z:/FluxTeam/Data/FTT02_SiOxJJ_2026_06_25/RFSOC/q2//"
+#     },
+#
+#     # "3": {"Readout": {"Frequency":  6817.98, "Gain": 4000},
+#     #       "Qubit": {"Frequency": 1682.5, "Gain": 5000, "sigma": 1.9, "flattop_length": None},  #pi 5000
+#     #       "outerfoldername": "Z:/t1Team/Data/2026-06-27_BFG_recooldown/Device 2 KOH + SiOx JJ (2 CLs)/RFSOC/Q3//"},
+#
+#     # "4": {"Readout": {"Frequency":  6911.954, "Gain": 4000},
+#     #       "Qubit": {"Frequency":   2043, "Gain": 1089, "sigma": 0.5, "flattop_length": None},
+#     #       "outerfoldername": "Z:/t1Team/Data/2026-06-27_BFG_recooldown/Device 2 KOH + SiOx JJ (2 CLs)/RFSOC/Q4//"},
+# }
 
-    "2":
+# FTT Low freq SiOx Oct 2026
+Qubit_Parameters = { # FTT Low freq SiOx Oct 2026
+    '4':
     {
-        "Readout": {"Frequency": 6821.65, "Gain": 3300},
-        "Qubit":
-        {
-            "Frequency": 2854.95,   # pi pulse: 2855.05
-            "Gain":  18000,         # pi pulse: 18000
-            "sigma": 0.1,           # pi pulse: 0.1
-            "flattop_length": None
-        },
-        "outerfoldername": "Z:/FluxTeam/Data/FTT02_SiOxJJ_2026_06_25/RFSOC/q2//",
-        "outerfoldernameT2": "Z:/FluxTeam/Data/FTT02_SiOxJJ_2026_06_25/RFSOC/q2//"
-    },
-
-    # "3": {"Readout": {"Frequency":  6817.98, "Gain": 4000},
-    #       "Qubit": {"Frequency": 1682.5, "Gain": 5000, "sigma": 1.9, "flattop_length": None},  #pi 5000
-    #       "outerfoldername": "Z:/t1Team/Data/2026-06-27_BFG_recooldown/Device 2 KOH + SiOx JJ (2 CLs)/RFSOC/Q3//"},
-
-    # "4": {"Readout": {"Frequency":  6911.954, "Gain": 4000},
-    #       "Qubit": {"Frequency":   2043, "Gain": 1089, "sigma": 0.5, "flattop_length": None},
-    #       "outerfoldername": "Z:/t1Team/Data/2026-06-27_BFG_recooldown/Device 2 KOH + SiOx JJ (2 CLs)/RFSOC/Q4//"},
+        'Readout': {'Frequency': 6726.1, 'Gain': 5000},
+        'Qubit': {'Frequency': 2929.58, 'Gain': 5100, "sigma": 0.5, "flattop_length": 2}, # pi/2 gain = 2600
+        'outerfoldername': R"Z:\FluxTeam/Data/FTT_SiOxJJ_LF_2026_10_27/RFSOC/Q4res6726/",
+        "outerfoldernameT2": R"Z:\FluxTeam/Data/FTT_SiOxJJ_LF_2026_10_27/RFSOC/Q4res6726/"
+    }, #SiOx ML
 }
+# FTT Low freq SiOx Oct 2026
 
 T1_qubitsweep = False
 T1_T2E_sweep = True
 
-T1T2_params = {"qubit_swept":      [2],         # [1, 3],
-               "T1_step_list":     [100],       # [100, 100],
-               "T1_expts_list":    [100],       # [100, 100],
-               "T1_reps_list":     [15],        # [15, 15],
-               "T1_rounds_list":   [15],        # [15, 15],
-               "T2E_max_list":     [2000],      # [2000, 100],
-               "T2E_expts_list":   [101],       # [101, 3],
-               "T2E_reps_list":    [20],        # [20, 3],
-               "T2E_rounds_list":  [20],        # [20, 3],
-               "pi2_gain_list":    [7000],      # [2100, 2500],
-               "T1_relax_delay":   [3000],      # [10000, 10000],
-               "T2E_relax_delay":  [3000]       # [2000, 10]
+T1T2_params = {"qubit_swept":      [4],         # [1, 3],
+               "T1_step_list":     [20],       # [100, 100],
+               "T1_expts_list":    [80],       # [100, 100],
+               "T1_reps_list":     [10],        # [15, 15],
+               "T1_rounds_list":   [20],        # [15, 15],
+               "T2E_max_list":     [400],      # [2000, 100],
+               "T2E_expts_list":   [80],       # [101, 3],
+               "T2E_reps_list":    [10],        # [20, 3],
+               "T2E_rounds_list":  [50],        # [20, 3],
+               "pi2_gain_list":    [2600],      # [2100, 2500],
+               "T1_relax_delay":   [5000],      # [10000, 10000],
+               "T2E_relax_delay":  [5000]       # [2000, 10]
                }
 
 RunAmplitudeRabi = False
