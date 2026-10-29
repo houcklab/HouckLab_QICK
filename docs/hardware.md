@@ -2,8 +2,9 @@
 
 The instruments qicklab talks to, how they are wired into the code, and the rules that protect
 the fridge and the sample. Addresses and per-setup values live in `Device.setup`
-(`qicklab.core.device.Setup`); the values below are the current lab setup (CSTQ03, 2026-10-01
-cooldown).
+(`qicklab.core.device.Setup`); the values below are the lab setup of the 2026-10-01 CSTQ03
+cooldown, which both device files of the 2026-10-29 cooldown start from (two CSTQ03 samples;
+which charge line and RFSoC lines each one uses is still to be confirmed).
 
 | Instrument | Address | Driver (`qicklab.hardware.*`) | Used by |
 |---|---|---|---|
@@ -239,10 +240,12 @@ Every experiment writes four files with one timestamp:
     <outerFolder><path>/<path>_<YYYY_MM_DD>/<path>_<YYYY_MM_DD_HH_MM_SS>_data.h5   (+ .png, .json, _provenance.json)
 
 - `outerFolder` = `Device.folder(qubit_readout)` = `f"{data_root}/Q{q}//"`. `data_root` is set per
-  device and cooldown, e.g. `V:/t1Team/Data/2026-10-01_BFC_cooldown/CSTQ03/RFSOC`.
+  sample and cooldown, `V:/t1Team/Data/<YYYY-MM-DD>_BFC_cooldown/<device name>/RFSOC`, e.g.
+  `V:/t1Team/Data/2026-10-29_BFC_cooldown/CSTQ03_nucell_fab2026_10/RFSOC`. The 2026-10-01
+  cooldown used `V:/t1Team/Data/2026-10-01_BFC_cooldown/CSTQ03/RFSOC`.
 - `outerFolder + path` is plain string concatenation, so the folder must end with `/`. The
   resulting mix of `/`, `//` and `\` is what is on disk; keep it (code compares these strings).
-  Example: `V:/t1Team/Data/2026-10-01_BFC_cooldown/CSTQ03/RFSOC/Q1//TransmissionFF\TransmissionFF_2026_10_13\TransmissionFF_2026_10_13_14_03_22_data.h5`.
+  Example: `V:/t1Team/Data/2026-10-29_BFC_cooldown/CSTQ03_nucell_fab2026_10/RFSOC/Q1//TransmissionFF\TransmissionFF_2026_10_29\TransmissionFF_2026_10_29_14_03_22_data.h5`.
 - `path` (`"T1"`, `"QubitSpecFF"`, `"SingleShot"`, ...) is fixed per step and unchanged by the
   refactor. Some experiments append a suffix to the h5 name (`_Q{n}` for T1 and the soft-sweep
   Rabi, `_n{num_pi_pulses}` for T2E). If the names are already taken (two runs of the same

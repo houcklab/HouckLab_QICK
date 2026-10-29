@@ -5,8 +5,10 @@ History and decisions of the 2026-10 refactor: `docs/dev/refactor-2026-10/HANDOF
 ## What this repo is
 
 `qicklab` is the Houck Lab QM-team package for measuring superconducting qubits with a Xilinx
-RFSoC running QICK (tProc v1, client `qick==0.2.334`); the production chip is CSTQ03. A device
-file holds one chip's measured numbers, a `Session` picks the qubits, the bias and the shared
+RFSoC running QICK (tProc v1, client `qick==0.2.334`); the production chip is CSTQ03. The
+2026-10-29 BFC cooldown holds two CSTQ03 samples, `CSTQ03_nucell_fab2026_10` (neutrino cell) and
+`CSTQ03_qcage_fab2026_09` (Qcage), and starts with TWPA calibration (`docs/experiments/twpa.md`).
+A device file holds one sample's measured numbers, a `Session` picks the qubits, the bias and the shared
 settings, and a `PLAN` is an ordered list of steps (`R.t1()`, `R.single_shot()`, ...) that `run()`
 executes. Each step wraps an experiment class that compiles a tProc program, acquires, fits,
 plots and saves `.h5` + `.png` + `.json`. User docs start at `docs/README.md`, developer docs at
@@ -23,8 +25,10 @@ qicklab/              the package; layers in import order, lowest first
   experiments/        one module per family: QICK program + ExperimentClass subclass
   runs/               run_* (one per step), groups.py (G, session groups), recipes.py (R, STEPS)
   twpa/               standalone TWPA bias / pump / sweep scripts
-devices/              <NAME>.py: one frozen DEVICE per chip and cooldown; archive/ for past cooldowns
-runners/              <device>_session.py: SESSION, STEP, PLAN (the file a researcher edits)
+devices/              <chip>_<package>_fab<YYYY>_<MM>.py: one frozen DEVICE per sample and cooldown;
+                      archive/ for past cooldowns
+runners/              <device>_session.py: SESSION, STEP, PLAN (the file a researcher edits); archive/
+archive/              unused code kept for reference, outside the package (archive/README.md)
 scripts/gen_docs.py   parameter registry -> docs/parameters.md and the step pages' recipe tables
 tests/                regression/ (golden), refactor/ (equivalence gate), test_*.py, hardware/
 docs/                 user and developer docs; dev/refactor-2026-10/ is the refactor record
@@ -85,21 +89,28 @@ is empty; device files import only `qicklab.core.device`. Enforced by `tests/tes
 
 ## Running a session
 
-`runners/CSTQ03_session.py` builds `SESSION = Session(DEVICE, qubit_readout=..., qubit_pulse=...,
-bias_v=...)`, a `STEP` dict of recipes and `PLAN = [...]`. `run(SESSION, PLAN)` connects (RFSoC over
-Pyro4, charge yoko), validates the device against the board and runs the steps in order.
-`run(SESSION, plan, dry_run=True)` (`--dry-run`) compiles every program against the fakes in
-`qicklab/core/fakes.py`, saves to a temp folder and plays nothing. Dry-run a short plan: the
-committed PLAN (10^6-shot `undriven_single_shot`, `repeat=10000`) takes ~12 min to hit the guard.
-Guides: `docs/running_a_session.md`, `docs/parameters.md` (every knob, units, defaults).
+A session runner (`runners/CSTQ03_nucell_fab2026_10_session.py`,
+`runners/CSTQ03_qcage_fab2026_09_session.py`) builds `SESSION = Session(DEVICE, qubit_readout=...,
+qubit_pulse=..., bias_v=...)`, a `STEP` dict of recipes and `PLAN = [...]`. `run(SESSION, PLAN)`
+connects (RFSoC over Pyro4, charge yoko), validates the device against the board and runs the
+steps in order. `run(SESSION, plan, dry_run=True)` (`--dry-run`) compiles every program against
+the fakes in `qicklab/core/fakes.py`, saves to a temp folder and plays nothing; steps with many
+repetitions stop at the dry-run guard (`INCOMPLETE`), so dry-run those with few. Guides:
+`docs/running_a_session.md`, `docs/parameters.md` (every knob, units, defaults).
 
 ## Adding a device
 
-Copy `devices/CSTQ03.py` to `devices/<NAME>.py` (one `DEVICE`) and the session runner to
-`runners/<NAME>_session.py`, then dry-run a plan. Measured values are recorded with
+One physical sample is one name, `<chip>_<package>_fab<YYYY>_<MM>` (`device_name()` in
+`qicklab/core/device.py`): the device file stem, `Device.name` (in every file's provenance) and its
+data folder `V:/t1Team/Data/<cooldown>_BFC_cooldown/<name>/RFSOC`. `Device.validate` and
+`tests/test_live_devices.py` enforce it. Copy a live device file to `devices/<name>.py` (one
+`DEVICE`, with `chip` / `package` / `fab` / `cooldown` / `data_root`) and its runner to
+`runners/<name>_session.py`, then dry-run a plan. Measured values are recorded with
 `qicklab.core.io.record_calibration` (appends a line to the qubit's `calibrations.jsonl` and prints
-a paste-ready `Qubit(...)`). At the end of a cooldown, copy the file into `devices/archive/` before
-editing it. Guide: `docs/adding_a_device.md`.
+a paste-ready `Qubit(...)`). At the end of a cooldown, copy the file to
+`devices/archive/<name>_<YYYY_MM_DD>.py` (and the runner to `runners/archive/`) before editing it;
+live code never imports the archive. The golden replays `devices/archive/CSTQ03_2026_10_01.py`.
+Guide: `docs/adding_a_device.md`.
 
 ## Physics conventions to preserve
 
@@ -116,5 +127,6 @@ editing it. Guide: `docs/adding_a_device.md`.
 
 - `docs/dev/refactor-2026-10/`: `HANDOFF.md` (commit log, decisions), `design.md` (spec), audits
   in `docs/dev/refactor-2026-10/audit/`, review findings in `docs/dev/refactor-2026-10/review/findings.json`.
-- Branch `qicklab_refactor` (from `bfc_code` at `0f0a51f`), to be fast-forwarded into `bfc_code`.
+- Branch `qicklab_refactor` (from `bfc_code` at `0f0a51f`) was fast-forwarded into `bfc_code`;
+  lab work continues on `bfc_code`.
   `main` is the lab's older tree (none of it is here); legacy code: `git show 0f0a51f:<path>`.

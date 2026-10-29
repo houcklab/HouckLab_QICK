@@ -1,4 +1,4 @@
-"""Replay every golden label through the session API: Session(devices.CSTQ03) + a PLAN of recipes.
+"""Replay every golden label through the session API: Session(archived CSTQ03) + a PLAN of recipes.
 
 The second driver of the golden (the first, ``driver_qicklab``, replays the frozen runner text
 through the legacy call shapes and is the only one that writes the golden). Per label:
@@ -38,7 +38,7 @@ import warnings
 
 os.environ.setdefault("MPLBACKEND", "Agg")
 
-from devices.CSTQ03 import DEVICE  # noqa: E402
+from devices.archive.CSTQ03_2026_10_01 import DEVICE  # noqa: E402
 from qicklab.core.session import GROUPS, Session, connect, run_step  # noqa: E402
 from qicklab.runs import groups as G  # noqa: E402
 from qicklab.runs import recipes as R  # noqa: E402
@@ -103,7 +103,7 @@ def build(ns, flags, data_root):
         DEVICE.readout_window.adc_offset_us,
     ):
         raise ValueError(
-            "devices/CSTQ03.py no longer carries the frozen runner's qubit values / window: "
+            "devices/archive/CSTQ03_2026_10_01.py no longer carries the frozen runner's qubit values / window: "
             "driver_plan replays the golden with them (give it a frozen Device instead)"
         )
     device = dataclasses.replace(DEVICE, data_root=data_root)

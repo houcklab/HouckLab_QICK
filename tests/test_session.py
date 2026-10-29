@@ -16,7 +16,7 @@ import pyvisa
 
 import qicklab.core.device as device_module
 import qicklab.core.session as session_module
-from devices.CSTQ03 import DEVICE
+from devices.archive.CSTQ03_2026_10_01 import DEVICE
 from qicklab.core import context as context_module
 from qicklab.core import fakes, io
 from qicklab.core.config import rebuild_singleshot_config

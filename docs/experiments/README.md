@@ -13,14 +13,14 @@ see, what they save and what they hand to later steps.
   its default, units and meaning. The block sits between two `params:begin` / `params:end`
   HTML comments and is rewritten by `python scripts/gen_docs.py` from
   `qicklab/core/params.py` and the recipe signature; edit those, not the block. The CSTQ03
-  values of every step are in `runners/CSTQ03_session.py` (`STEP[...]`).
+  values of every step are in the session runners, e.g. `runners/CSTQ03_nucell_fab2026_10_session.py` (`STEP[...]`).
 - Every parameter, of every step, group and device field, is in
   [parameters.md](../parameters.md), generated from the same registry.
 
 ## Running a step
 
 ```python
-from devices.CSTQ03 import DEVICE
+from devices.CSTQ03_nucell_fab2026_10 import DEVICE
 from qicklab.core.session import Session, run
 from qicklab.runs import groups as G
 from qicklab.runs import recipes as R

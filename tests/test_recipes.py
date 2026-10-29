@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from devices.CSTQ03 import DEVICE
+from devices.archive.CSTQ03_2026_10_01 import DEVICE
 from qicklab.core.config import rebuild_singleshot_config
 from qicklab.core.context import build_context
 from qicklab.core.device import ParityParams

@@ -1,4 +1,7 @@
-"""CSTQ03, 2026-10-01 BFC cooldown. History and measurements: docs/devices/CSTQ03.md.
+"""CSTQ03, 2026-10-01 BFC cooldown (archived 2026-10-29). History: docs/devices/CSTQ03.md.
+
+A record of what that cooldown ran with, never edited: the golden harness and the session tests
+replay the legacy runner with these values. Its runner: runners/archive/CSTQ03_2026_10_01_session.py.
 
 Values as in the legacy runner (runners/CSTQ03_BFC.py, deleted in phase 5b) sections 1-2 on
 2026-10-17, frozen in tests/regression/fixtures/cstq03_legacy_runner.py.txt. Inline notes

@@ -32,7 +32,7 @@ writes the golden); `driver_plan` is skipped and compares on the next plain run.
 |---|---|
 | `capture.py` | Layout-agnostic core: instrumentation, digests, normalisation. The fakes and synthetic boards (`FakeSoc`, `FakeSocCfg`, `FakeYoko`, `STATE`, `set_board`, ...) live in `qicklab/core/fakes.py` since phase 5a (shared with `run(..., dry_run=True)`) and are re-exported here under the same names. |
 | `driver_qicklab.py` | Replays every dispatch of the frozen runner, plus variant and multi-flag labels, on the `qicklab` package (the legacy call shapes `build_context` / `run_*`). The only driver that writes the golden. Its pre-refactor twin `driver_legacy.py` (the same replay on the pre-refactor `WorkingProjects.` package) was deleted in phase 5b. |
-| `driver_plan.py` | The same labels as `Session(devices.CSTQ03)` + a PLAN of recipes ([below](#driver_plan-the-session-api-replay)). Compares only. |
+| `driver_plan.py` | The same labels as `Session(devices.archive.CSTQ03_2026_10_01)` + a PLAN of recipes ([below](#driver_plan-the-session-api-replay)). Compares only. |
 | `fixtures/cstq03_legacy_params.py` | Reads the frozen runner's values and dispatches (never a hand copy) and translates them to group / recipe keywords. |
 | `fixtures/cstq03_legacy_runner.py.txt` | Verbatim copy of `Runners/CSTQ03_BFC.py` at commit `0f0a51f`. **Never edit** (see `fixtures/README.md`). |
 | `golden_cstq03.json` | The snapshot: `{"__meta__": {"qick", "variants"}, "A": {label: ...}, "B": {label: ...}}`. |
@@ -394,7 +394,7 @@ golden is regenerated.
 ## driver_plan: the session-API replay
 
 `driver_plan.py` proves that the session layer (`qicklab.core.session`,
-`qicklab.runs.groups`, `qicklab.runs.recipes`, `devices/CSTQ03.py`) sends the
+`qicklab.runs.groups`, `qicklab.runs.recipes`, `devices/archive/CSTQ03_2026_10_01.py`) sends the
 hardware exactly what the legacy runner sent. Per label:
 
 1. `fixtures/cstq03_legacy_params.namespace()` executes the frozen runner's

@@ -6,7 +6,8 @@ physics lives in `qicklab`; all chip numbers live in `devices/<device>.py`
 ([adding_a_device.md](adding_a_device.md)). You should never need to edit either to take data.
 
 > `Session`, `run`, `connect`, `run_step` and the dry run are in `qicklab/core/session.py`; the
-> CSTQ03 session runner is `runners/CSTQ03_session.py` ([below](#the-cstq03-session-runner)).
+> session runners of the 2026-10-29 cooldown are `runners/CSTQ03_nucell_fab2026_10_session.py`
+> and `runners/CSTQ03_qcage_fab2026_09_session.py` ([below](#the-cstq03-session-runner)).
 > Every recipe keyword is in its function's docstring (`help(R.t1)`) and, with units, default
 > and meaning, in [parameters.md](parameters.md) (which opens with the knobs most sessions
 > change) and in the recipe table at the top of each [experiments/](experiments/README.md) page.
@@ -14,8 +15,8 @@ physics lives in `qicklab`; all chip numbers live in `devices/<device>.py`
 ## The session file
 
 ```python
-"""CSTQ03, 2026-10-01 cooldown."""
-from devices.CSTQ03 import DEVICE
+"""CSTQ03 in a neutrino cell, fab 2026-10; 2026-10-29 cooldown."""
+from devices.CSTQ03_nucell_fab2026_10 import DEVICE
 from qicklab.core.session import Session, run
 from qicklab.runs import groups as G
 from qicklab.runs import recipes as R
@@ -51,9 +52,12 @@ Nothing touches hardware until `run()` is called. Importing the file is safe.
 
 ### The CSTQ03 session runner
 
-`runners/CSTQ03_session.py` is the session file for CSTQ03. It replaced the legacy flag runner
-`runners/CSTQ03_BFC.py` (deleted 2026-10-18; frozen in
-`tests/regression/fixtures/cstq03_legacy_runner.py.txt`). It has three blocks:
+The 2026-10-29 cooldown has one session file per CSTQ03 sample,
+`runners/CSTQ03_nucell_fab2026_10_session.py` and `runners/CSTQ03_qcage_fab2026_09_session.py`,
+identical except for the device they import. They carry the values of the 2026-10-01 runner
+(`runners/archive/CSTQ03_2026_10_01_session.py`, which replaced the legacy flag runner
+`runners/CSTQ03_BFC.py`, deleted 2026-10-18 and frozen in
+`tests/regression/fixtures/cstq03_legacy_runner.py.txt`). Each has three blocks:
 
 1. `SESSION`: qubits, bias, `yoko_fixed`, and the shared groups. Only the legacy runner's
    repetition counts differ from the library groups (`G.coherence(repetitions=1000)`,
@@ -62,11 +66,13 @@ Nothing touches hardware until `run()` is called. Importing the file is safe.
    the library defaults (for example `R.t1_single_shot(repetitions=3000)`,
    `R.modified_ramsey(df=1, f_ge=3754.5, ...)`).
 3. `PLAN`: the steps to run, e.g. `PLAN = [STEP["transmission_fit"], STEP["t1"]]`. Any step
-   can be written out instead with its own overrides (`R.t1(relax_delay=5000)`).
+   can be written out instead with its own overrides (`R.t1(relax_delay=5000)`). The committed
+   PLAN is the first bring-up stage, `transmission_fit`; the comment above it lists the order.
 
 ```
-python -m runners.CSTQ03_session              # on the fridge
-python -m runners.CSTQ03_session --dry-run    # fake board, nothing kept
+python -m runners.CSTQ03_nucell_fab2026_10_session              # on the fridge
+python -m runners.CSTQ03_nucell_fab2026_10_session --dry-run    # fake board, nothing kept
+python -m runners.CSTQ03_qcage_fab2026_09_session               # the other sample
 ```
 
 Run it from the repo root (or PyCharm with the repo root as sources root). The legacy
@@ -325,7 +331,7 @@ buffer limits fail before you are on the fridge. It says nothing about physics.
 ```python
 from qicklab.core.session import connect, run_step
 from qicklab.runs import recipes as R
-from runners.CSTQ03_session import SESSION
+from runners.CSTQ03_nucell_fab2026_10_session import SESSION
 
 ctx = connect(SESSION)                  # one Pyro connection and one yoko ramp
 run_step(ctx, R.t1(relax_delay=5000))
@@ -390,7 +396,7 @@ names (`..._data_1.h5`, `..._data_1.png`, `..._data_1.json`) instead of overwrit
 first. A real CSTQ03 file:
 
 ```
-V:/t1Team/Data/2026-10-01_BFC_cooldown/CSTQ03/RFSOC/Q1//TransmissionFF\TransmissionFF_2026_10_13\TransmissionFF_2026_10_13_14_03_22_data.h5
+V:/t1Team/Data/2026-10-29_BFC_cooldown/CSTQ03_nucell_fab2026_10/RFSOC/Q1//TransmissionFF\TransmissionFF_2026_10_29\TransmissionFF_2026_10_29_14_03_22_data.h5
 ```
 
 The mix of `/`, `//` and `\` is intentional legacy behaviour (string concatenation plus
@@ -435,7 +441,7 @@ longer than a second), but keep it in mind when scripting loops of very short ru
 import glob, json
 import h5py
 
-folder = "V:/t1Team/Data/2026-10-01_BFC_cooldown/CSTQ03/RFSOC/Q5//T1"
+folder = "V:/t1Team/Data/2026-10-29_BFC_cooldown/CSTQ03_nucell_fab2026_10/RFSOC/Q5//T1"
 fname = sorted(glob.glob(folder + "/T1_*/T1_*_data*.h5"))[-1]   # newest
 
 with h5py.File(fname, "r") as f:

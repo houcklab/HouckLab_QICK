@@ -272,10 +272,10 @@ Runs in **regime A**. `df`, `f_upper_mhz` and the mapping probabilities come fro
 device file (`Qubit.parity`).
 
 ```python
-# devices/CSTQ03.py  (example values: CSTQ03 Q2 doublet measured 2026-08-04)
+# devices/<name>.py  (example values: CSTQ03 Q2 doublet measured 2026-08-04)
 Qubit(..., parity=ParityParams(df_mhz=2.7, f_upper_mhz=4186.7, cd_max_mhz=0.682,
                                cd_period_mv=4.37))
-# runners/CSTQ03_session.py
+# runners/<name>_session.py
 PLAN = [
     R.active_reset_verify(),                     # validate the reset first
     R.modified_ramsey(tau_harmonic_k=5, symmetric_ramsey=True,

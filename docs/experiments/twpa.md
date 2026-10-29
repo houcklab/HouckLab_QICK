@@ -27,7 +27,7 @@ Shared helpers: `qicklab.hardware.pnax` (`measure_s21_band`, `band_mean_dB`),
 `read_bias_state`). The other instrument addresses (`PNAX_ADDRESS`, `PUMP_SYNTH_PORT`)
 and the pump operating point are module-level constants in each script. The device model has
 a per-device `Setup.twpa` (`TwpaSetup(yoko_addr, synth_port, pnax_addr, pump=(ghz, dbm, ch),
-bias_ua)`; `devices/CSTQ03.py` fills it), but it is documentation only: no script reads it
+bias_ua)`; the live device files fill it), but it is documentation only: no script reads it
 ([parameters.md, TwpaSetup](../parameters.md#twpasetup)). If the scripts start reading it, the
 charge-yoko refusal in `open_charge_yoko` must also check the device's `twpa.yoko_addr`: today
 it compares only against `TWPA_YOKO_ADDRESS`. See [hardware](../hardware.md).

@@ -1,4 +1,4 @@
-"""qicklab.core.device and devices/CSTQ03.py: legacy round trip, folders, with_qubit, validate."""
+"""qicklab.core.device and the archived CSTQ03 2026-10-01 device: legacy round trip, validate, ..."""
 
 import ast
 import copy
@@ -11,8 +11,8 @@ from pathlib import Path
 
 import pytest
 
+from devices.archive.CSTQ03_2026_10_01 import DEVICE
 from devices.archive.CSTQ03_v2b import DEVICE as V2B
-from devices.CSTQ03 import DEVICE
 from qicklab.core.context import build_context
 from qicklab.core.device import (
     Device,
@@ -89,11 +89,13 @@ def test_archived_v2b_is_the_runner_table(legacy):
 
 
 def test_no_session_code_imports_the_archive():
+    """Live code never imports an archived device; archived runners (runners/archive) may."""
     users = [
         str(path.relative_to(REPO))
         for top in ("qicklab", "runners", "devices")
         for path in (REPO / top).rglob("*.py")
-        if "devices.archive" in path.read_text(encoding="utf-8")
+        if "archive" not in path.relative_to(REPO).parts
+        and "devices.archive" in path.read_text(encoding="utf-8")
     ]
     assert not users
 

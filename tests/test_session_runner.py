@@ -1,4 +1,4 @@
-"""runners/CSTQ03_session.py hands every step the arguments the legacy CSTQ03 runner passed.
+"""runners/archive/CSTQ03_2026_10_01_session.py hands every step the arguments the legacy CSTQ03 runner passed.
 
 The legacy runner (runners/CSTQ03_BFC.py, deleted in phase 5b) is read from its frozen copy,
 tests/regression/fixtures/cstq03_legacy_runner.py.txt (via cstq03_legacy_params), with the
@@ -26,10 +26,10 @@ from qicklab.runs import groups as G
 from qicklab.runs import recipes as R
 from tests.regression.fixtures import cstq03_legacy_params as F
 
-runner = importlib.import_module("runners.CSTQ03_session")
+runner = importlib.import_module("runners.archive.CSTQ03_2026_10_01_session")
 
 # (runner dict, key, value the live runner had when it was deleted): its changes after the
-# freeze at 0f0a51f, which runners/CSTQ03_session.py carries. The live runner also dropped
+# freeze at 0f0a51f, which the archived session runner carries. The live runner also dropped
 # `ts` (837e0d45, dead cfg keys; build_context ignores it), which no step reads.
 POST_FREEZE = (
     ("Amplitude_Rabi_params", "flattop_relax_delay", 8000),  # F84, 0397f869: honoured knob

@@ -6,33 +6,59 @@ that file, keeping it current during a cooldown, and archiving it afterwards. Fo
 measurement order on a fresh chip see [bringup_workflow.md](bringup_workflow.md); for an example
 record see [devices/CSTQ03.md](devices/CSTQ03.md).
 
-> Status (2026-10-17): the dataclasses live in `qicklab/core/device.py`, the CSTQ03 file in
-> `devices/CSTQ03.py`, the session layer (`Session`, `run`, dry run) in
+> Status (2026-10-29): the dataclasses live in `qicklab/core/device.py`, the device files of the
+> 2026-10-29 cooldown are `devices/CSTQ03_nucell_fab2026_10.py` and
+> `devices/CSTQ03_qcage_fab2026_09.py`, the session layer (`Session`, `run`, dry run) in
 > `qicklab/core/session.py` and `record_calibration` in `qicklab/core/io.py`. `connect()` feeds
 > `DEVICE.legacy_parameters()` to the legacy `build_context`.
+
+## Naming: one sample, one name
+
+The same chip design is fabricated and packaged more than once, and two samples of one design
+can sit in the fridge together. Each physical sample therefore gets a structured name
+
+```
+<chip>_<package>_fab<YYYY>_<MM>          e.g. CSTQ03_nucell_fab2026_10, CSTQ03_qcage_fab2026_09
+```
+
+- `chip`: the design (`CSTQ03`);
+- `package`: a short lowercase tag of the sample holder (`nucell` = neutrino cell, `qcage` = Qcage);
+- `fab`: the fabrication month.
+
+That one string is the device file stem (`devices/<name>.py`), `Device.name` (written into every
+saved file's provenance and every `calibrations.jsonl` line) and the device folder under the
+cooldown's data root. The three parts are also fields of the `Device` (`chip`, `package`,
+`fab`), and `validate` refuses a `name` that does not match them, so the file, the name and the
+fields cannot drift apart. The cooldown is not part of the name: it is the `cooldown` field and
+the top folder of the data root, `V:/t1Team/Data/<YYYY-MM-DD>_BFC_cooldown/<name>/RFSOC`.
+`qicklab.core.device.device_name(chip, package, fab)` builds the name. A device without these
+fields (the archived CSTQ03 files) skips the check.
 
 ## 1. Copy an existing device file
 
 ```
-copy devices\CSTQ03.py devices\CSTQ04.py
+copy devices\CSTQ03_nucell_fab2026_10.py devices\CSTQ04_nucell_fab2026_11.py
 ```
 
-The file name is the device name. Sessions import it directly: `from devices.CSTQ04 import DEVICE`.
-A device file imports only `qicklab.core.device` (enforced by `tests/test_layering.py`); it is
-data, not code.
+The file name is the device name. Sessions import it directly:
+`from devices.CSTQ04_nucell_fab2026_11 import DEVICE`. A device file imports only
+`qicklab.core.device` (enforced by `tests/test_layering.py`); it is data, not code.
 
 ## 2. Fill in the fields
 
 ```python
-"""CSTQ04, 2026-12-01 cooldown."""
+"""CSTQ04 in a neutrino cell, fab 2026-11; 2026-12-01 cooldown."""
 from qicklab.core.device import (
     Device, ParityParams, Qubit, Readout, ReadoutWindow, Setup, TwpaSetup,
 )
 
 DEVICE = Device(
-    name="CSTQ04",
+    name="CSTQ04_nucell_fab2026_11",
+    chip="CSTQ04",
+    package="nucell",
+    fab="2026-11",
     cooldown="2026-12-01",
-    data_root="V:/t1Team/Data/2026-12-01_BFC_cooldown/CSTQ04/RFSOC",
+    data_root="V:/t1Team/Data/2026-12-01_BFC_cooldown/CSTQ04_nucell_fab2026_11/RFSOC",
     cavity_min=True,                                   # resonator shows as a dip
     readout_window=ReadoutWindow(length_us=15, adc_offset_us=0.3),
     ss_window=ReadoutWindow(length_us=15, adc_offset_us=0.3),
@@ -61,7 +87,10 @@ DEVICE = Device(
 
 | field | units | meaning |
 |---|---|---|
-| `name` | | chip name; matches the file name |
+| `name` | | device name; matches the file name. With `chip`/`package`/`fab` set it must be `<chip>_<package>_fab<YYYY>_<MM>` |
+| `chip` | | chip design (`CSTQ03`); empty for a device without a structured identity |
+| `package` | | sample package, short lowercase tag (`nucell`, `qcage`) |
+| `fab` | `YYYY-MM` | fabrication month |
 | `cooldown` | date `YYYY-MM-DD` | cooldown start; also used in the archive file name |
 | `data_root` | path | root of all RFSoC data for this device and cooldown. Qubit `q` writes under `f"{data_root}/Q{q}//"` (the trailing `//` is deliberate, see [architecture.md](architecture.md#file-naming-must-stay-byte-identical)) |
 | `qubits` | dict int -> `Qubit` | keys 1..N, contiguous |
@@ -260,15 +289,19 @@ itself never reads or writes it.
 
 ## 5. End of cooldown: archive
 
-Before editing the file for a new cooldown of the same chip:
+Before editing the file for a new cooldown of the same sample:
 
 ```
-copy devices\CSTQ04.py devices\archive\CSTQ04_2026-12-01.py
+copy devices\CSTQ04_nucell_fab2026_11.py devices\archive\CSTQ04_nucell_fab2026_11_2026_12_01.py
 ```
 
-then change `cooldown`, `data_root` and the qubit values in `devices/CSTQ04.py`. Archive files are
-never deleted and never imported by sessions; they are the record of what each cooldown used
-(`devices/archive/README.md`). CSTQ03's earlier "v2b nu cell" table is archived as
+(`<name>_<cooldown YYYY_MM_DD>.py`, underscores so tests can import it), then change `cooldown`,
+`data_root` and the qubit values in the live file. Keep the session runner of a finished cooldown
+under `runners/archive/` with the same suffix. Archive files are never deleted and never imported
+by live sessions; they are the record of what each cooldown used (`devices/archive/README.md`).
+The 2026-10-01 cooldown's CSTQ03 (before structured names) is
+`devices/archive/CSTQ03_2026_10_01.py` with `runners/archive/CSTQ03_2026_10_01_session.py`; the
+regression golden replays with it. CSTQ03's earlier "v2b nu cell" table is archived as
 `devices/archive/CSTQ03_v2b.py` (until 2026-10-18 it was the unused `Qubit_Parameters_v2b` of the
 legacy runner `runners/CSTQ03_BFC.py`, now deleted).
 
@@ -277,13 +310,14 @@ start the new cooldown's table.
 
 ## Checklist
 
-- [ ] `devices/<NAME>.py` copied from an existing device file; `name`, `cooldown`, `data_root` set
+- [ ] `devices/<name>.py` copied from an existing device file; `name`, `chip`, `package`, `fab`,
+      `cooldown`, `data_root` set (name = `<chip>_<package>_fab<YYYY>_<MM>`)
 - [ ] every qubit: freq, gain, sigma, readout freq and gain (design values are fine to start)
 - [ ] `cavity_min` matches what transmission shows
 - [ ] `board_overrides` if Nyquist zones or wiring differ from `BASE_CONFIG`
 - [ ] `setup.twpa` if the TWPA scripts will be used
 - [ ] `DEVICE.validate(soccfg)` raises nothing and its warnings are understood; a dry run of one plan passes
-- [ ] `runners/<NAME>_session.py` copied from `runners/CSTQ03_session.py`: import the new `DEVICE`,
+- [ ] `runners/<name>_session.py` copied from an existing session runner: import the new `DEVICE`,
       set the qubits, bias and the `STEP` values ([running_a_session.md](running_a_session.md#the-cstq03-session-runner))
 - [ ] previous cooldown archived under `devices/archive/`
 - [ ] `docs/devices/<NAME>.md` started

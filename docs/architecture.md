@@ -5,7 +5,7 @@ code depends on. Read [running_a_session.md](running_a_session.md) first if you 
 take data; this page is for people who change the code.
 
 > Status (2026-10-18): the session layer (`core.device`, `core.session`, `core.fakes`,
-> `runs.groups`, `runs.recipes`, `devices/CSTQ03.py`, `runners/CSTQ03_session.py`) replaced the
+> `runs.groups`, `runs.recipes`, the CSTQ03 device file and session runner, archived 2026-10-29 as `devices/archive/CSTQ03_2026_10_01.py` and `runners/archive/CSTQ03_2026_10_01_session.py`) replaced the
 > legacy flag runner `runners/CSTQ03_BFC.py`, which is deleted (its parameters stay frozen in
 > `tests/regression/fixtures/cstq03_legacy_runner.py.txt`). The parameter registry
 > `core.params` lists every knob; `scripts/gen_docs.py` generates `docs/parameters.md` and the
@@ -367,7 +367,7 @@ proves the refactored code sends the same things to the hardware for the CSTQ03 
 set. It does not prove the programs are physically right; that rests on review and on
 `tests/hardware/verify_modified_ramsey_timing.py` against the board. Two drivers replay the
 same labels: `driver_qicklab` through the legacy call shapes (it alone writes the golden) and
-`driver_plan` as `Session(devices.CSTQ03)` + a PLAN of recipes; both must match the golden.
+`driver_plan` as `Session(devices.archive.CSTQ03_2026_10_01)` + a PLAN of recipes; both must match the golden.
 Details and limits: `tests/regression/README.md`.
 
 Rule: behaviour-preserving refactors and bug fixes are separate commits. A refactor commit

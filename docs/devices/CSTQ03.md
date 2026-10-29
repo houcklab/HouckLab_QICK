@@ -1,16 +1,35 @@
 # CSTQ03
 
-Device record for CSTQ03, a six-qubit BFC chip and the production target for the zero-span /
-Modified Ramsey charge-parity measurements. Current cooldown: **2026-10-01** (BFC cooldown).
-The numbers the code uses live in `devices/CSTQ03.py`; this page holds the history and the
-measurements behind them. The parameter set used before this cooldown table ("v2b nu cell")
-is archived at the bottom and in `devices/archive/CSTQ03_v2b.py`.
+Device record for CSTQ03, a six-qubit BFC chip design and the production target for the
+zero-span / Modified Ramsey charge-parity measurements. Current cooldown: **2026-10-29** (BFC
+cooldown), with two samples of the design in the fridge (next section). This page holds the
+history and the measurements behind the numbers in the device files. The parameter set used
+before the 2026-10-01 table ("v2b nu cell") is archived at the bottom and in
+`devices/archive/CSTQ03_v2b.py`.
 
 Dating convention: entries marked "runner note, undated" come from inline comments in the
 legacy runner as of 2026-10-13 and carry no date of their own. Measured facts are attributed
-as "CSTQ03 Qn, YYYY-MM-DD".
+as "CSTQ03 Qn, YYYY-MM-DD"; from 2026-10-29 on, name the sample too
+("CSTQ03_nucell_fab2026_10 Qn, YYYY-MM-DD").
 
-## Setup
+## 2026-10-29 cooldown: two samples
+
+| sample (`Device.name`) | package | fab | device file | session runner | data root |
+|---|---|---|---|---|---|
+| `CSTQ03_nucell_fab2026_10` | neutrino cell | 2026-10 | `devices/CSTQ03_nucell_fab2026_10.py` | `runners/CSTQ03_nucell_fab2026_10_session.py` | `V:/t1Team/Data/2026-10-29_BFC_cooldown/CSTQ03_nucell_fab2026_10/RFSOC` |
+| `CSTQ03_qcage_fab2026_09` | Qcage | 2026-09 | `devices/CSTQ03_qcage_fab2026_09.py` | `runners/CSTQ03_qcage_fab2026_09_session.py` | `V:/t1Team/Data/2026-10-29_BFC_cooldown/CSTQ03_qcage_fab2026_09/RFSOC` |
+
+TWPA calibration data and the TWPA state log: `V:/t1Team/Data/2026-10-29_BFC_cooldown/TWPA_calibration`.
+The cooldown starts with TWPA calibration (flux sweep, bias, pump sweep, gain compare;
+[experiments/twpa.md](../experiments/twpa.md)); the SynthHD is the only pump.
+
+Status at the start of the cooldown: both device files carry the 2026-10-01 qubit table below
+unchanged (pi/2 gains reset to the `gain // 2` default) as starting values; nothing is measured
+on either sample yet. Both also start with the 2026-10-01 `Setup` (charge yoko `GPIB1::9`, RFSoC
+lines of `BASE_CONFIG`). Open: which charge line and which RFSoC readout / drive lines each
+sample uses, and whether either sample is the chip measured in the 2026-10-01 cooldown.
+
+## Setup (2026-10-01 cooldown)
 
 | item | value |
 |---|---|
@@ -188,7 +207,7 @@ see [the echo null](../experiments/modified_ramsey.md#echo-is-a-null-only-for-sh
 The echo becomes a usable null only at shorter sigma (sigma = 0.04 us, k = 3: echo 0.063
 against main 0.960). The legacy runner (`runners/CSTQ03_BFC.py`, deleted 2026-10-18) had `df` = 1, `tau_harmonic_k` = 1,
 which contradicts this analysis; the session keeps them (`df=1` in `STEP["modified_ramsey"]` of
-`runners/CSTQ03_session.py`, `tau_harmonic_k` = 1 as the `R.modified_ramsey` default).
+`runners/archive/CSTQ03_2026_10_01_session.py`, `tau_harmonic_k` = 1 as the `R.modified_ramsey` default).
 
 ### Unresolved drive-bandwidth limit (df = 2.7 MHz, sigma = 0.1 us)
 
@@ -228,7 +247,7 @@ not with a lower HMM gate. At 250 us relax: 100 000 shots is about 26 s and 10 5
 The legacy runner (deleted 2026-10-18) had `mr_relax_delay` = 500 us with the comment "5x T1=50us"
 (5 x 50 = 250) and `mr_reps` = 50 000, while the text recommends 250 us and 100k. The session
 keeps 500 us and 50 000 (the `R.modified_ramsey` defaults, which `STEP["modified_ramsey"]` of
-`runners/CSTQ03_session.py` does not override). Which is intended is not settled.
+`runners/archive/CSTQ03_2026_10_01_session.py` does not override). Which is intended is not settled.
 
 ### HMM emission gate (CSTQ03 Q2, 2026-08-04)
 

@@ -91,8 +91,8 @@ LAYOUT_MODULES = frozenset(
             for m in "common set_bias set_pump flux_sweep pump_sweep gain_compare".split()
         ),
         "devices",
-        "devices.CSTQ03",
-        "runners.CSTQ03_session",
+        "devices.archive.CSTQ03_2026_10_01",
+        "runners.archive.CSTQ03_2026_10_01_session",
         "runners.CSTQ03_BFC",
         "tests.test_acquisition",
         "tests.test_zero_span_analysis",
