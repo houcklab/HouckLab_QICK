@@ -17,7 +17,7 @@ take data; this page is for people who change the code.
 devices/        one file per chip+cooldown (Device dataclass); archive/ for old cooldowns
 runners/        <device>_session.py: the per-session script a researcher edits
 qicklab/
-  hardware/     rfsoc, board (BASE_CONFIG), yoko, attenuator, sc5510a, pnax, synthhd
+  hardware/     rfsoc, board (BASE_CONFIG), yoko, attenuator, pnax, synthhd
   core/         experiment (ExperimentClass), device, context, config, session, params,
                 acquisition, readout, active_reset, schedule, io, fakes
   analysis/     iq, fitting, spectroscopy, ramsey, readout, plotting, hmm, rates, dwell,
@@ -602,7 +602,7 @@ readout. Lengthen `relax_delay`; never retry it blindly.
 | TWPA bias yoko (GS200) | `GPIB1::12::INSTR` | Current mode, dedicated. |
 | TWPA pump (Windfreak SynthHD) | `COM5` | |
 | PNA-X | `GPIB0::16::INSTR` | TWPA calibration only. |
-| SignalCore SC5510A | Pyro5 nameserver `192.168.0.102:9090`, prefix `SC5510A#` (env `SC5510A_SERVER_HOST`) | Unused by current runs. Server code: `https://github.com/NPdL-SQTeam/sc5510a-py`; the server PC must run `start_nameserver.py` and `start_instrument_server.py`. Example id `10002D35`. |
+| SignalCore SC5510A | Pyro5 nameserver `192.168.0.102:9090` | Archived 2026-10-29 (`archive/hardware/sc5510a.py`, `archive/README.md`): the SynthHD is the only pump. |
 | Vaunix LDA attenuator | DLL `VNX_atten64.dll`, serial 27786 | Unused by current runs. |
 
 Device-specific addresses live in `Device.setup`; see [devices/CSTQ03.md](devices/CSTQ03.md).

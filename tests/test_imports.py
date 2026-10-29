@@ -3,9 +3,8 @@
 The walk runs in a fresh interpreter (``python -c``), so modules that earlier
 tests already imported are executed again here instead of being served from
 ``sys.modules``. Before anything from qicklab is imported, ``Pyro4.locateNS``,
-``Pyro4.Proxy``, ``pyvisa.ResourceManager`` (and Pyro5's ``locate_ns`` /
-``Proxy``, used by hardware.sc5510a) are replaced by functions that raise, so an
-import that opens a connection fails the test.
+``Pyro4.Proxy`` and ``pyvisa.ResourceManager`` are replaced by functions that
+raise, so an import that opens a connection fails the test.
 """
 
 import importlib
@@ -50,12 +49,6 @@ def _block_hardware():
     Pyro4.locateNS = _forbidden("Pyro4.locateNS")
     Pyro4.Proxy = _forbidden("Pyro4.Proxy")
     pyvisa.ResourceManager = _forbidden("pyvisa.ResourceManager")
-    try:
-        import Pyro5.api
-    except ImportError:
-        return
-    Pyro5.api.locate_ns = _forbidden("Pyro5.api.locate_ns")
-    Pyro5.api.Proxy = _forbidden("Pyro5.api.Proxy")
 
 
 def _import_all():

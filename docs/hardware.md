@@ -13,7 +13,6 @@ cooldown).
 | Yokogawa GS200, TWPA bias | `GPIB1::12::INSTR`, current mode | `yoko` (`ramp_current`) | `qicklab.twpa` scripts only |
 | Windfreak SynthHD, TWPA pump | `COM5` | `synthhd` | `qicklab.twpa` scripts only |
 | Keysight PNA-X | `GPIB0::16::INSTR` | `pnax` | TWPA calibration only |
-| SignalCore SC5510A | Pyro5 nameserver, default host `192.168.0.102`, port 9090 | `sc5510a` | no current step |
 | Vaunix LDA attenuator | `VNX_atten64.dll`, serial 27786 | `attenuator` | no current step |
 
 ## RFSoC
@@ -227,16 +226,11 @@ The legacy driver registered the current working directory at import time, silen
 when the serial was not found or a call failed, and raised `NameError` in verbose mode when the
 readback was negative.
 
-## SignalCore SC5510A
+## SignalCore SC5510A (archived)
 
-Pyro5 client for remote SC5510A generators: `connect(name=None, host, port)` returns a proxy with
-`.frequency` (Hz), `.power` (dBm), `.output`, `.clocked`. Host from the environment variable
-`SC5510A_SERVER_HOST` (default `192.168.0.102`), nameserver port 9090, object prefix `SC5510A#`
-(example id `10002D35`). The server PC must run `start_nameserver.py` and
-`start_instrument_server.py` from `https://github.com/NPdL-SQTeam/sc5510a-py`. The default host
-is read at import; changing the variable afterwards has no effect. Needs Pyro5 (the `signalcore`
-extra in `pyproject.toml`). Typical use: `list_instruments()`, then `inst = connect("10002D35")`,
-`inst.frequency = 6e9`, `inst.power = 10`, `inst.output = True`.
+Archived 2026-10-29: the TWPA pump is the Windfreak SynthHD only. The Pyro5 client that was
+`qicklab.hardware.sc5510a` now lives in `archive/hardware/sc5510a.py`, outside the package; its
+server setup and how to restore it are in `archive/README.md`.
 
 ## Data paths
 

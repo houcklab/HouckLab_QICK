@@ -19,7 +19,6 @@ separate, reviewed commits.
 | Yoko output still on after a crash | closing VISA does not switch the output off; the legacy connect also turned it on before validating the readout window | intended (bias holds); ramp to 0 by hand if you want it off |
 | `OSError` loading `VNX_atten64.dll` / `LookupError` "no Vaunix LDA attenuator with serial" | DLL directory not registered (Python >= 3.8 ignores `PATH`), DLL not present, wrong serial (the error lists the serials found) | pass `dll_dir=`; the DLL is not in the repo; default serial 27786 |
 | `NameError: result` from the legacy attenuator driver in verbose mode | typo in a print when the readback is negative **(legacy bug)** | use `qicklab.hardware.attenuator` |
-| SC5510A connects to the wrong host | `SC5510A_SERVER_HOST` is read at import | set the variable before importing |
 
 ## Acquisition errors
 

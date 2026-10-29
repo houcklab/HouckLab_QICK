@@ -1,6 +1,7 @@
 """Pyro5 client for remote SignalCore SC5510A generators (run on the client PC).
 
-Server setup, host and usage: docs/hardware.md#signalcore-sc5510a.
+ARCHIVED 2026-10-29 (was qicklab.hardware.sc5510a): the TWPA pump is the Windfreak SynthHD only.
+Server setup, host and how to restore it: archive/README.md.
 """
 
 import os

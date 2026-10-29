@@ -19,7 +19,6 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["ruff", "pytest"]
 twpa = ["pywindfreak"]
-signalcore = ["Pyro5"]
 
 [tool.setuptools]
 packages = { find = { include = ["qicklab*", "devices*"] } }
@@ -28,7 +27,7 @@ packages = { find = { include = ["qicklab*", "devices*"] } }
 line-length = 100
 target-version = "py311"
 src = ["."]
-extend-exclude = [".venv", ".claude", ".idea", "WorkingProjects"]
+extend-exclude = [".venv", ".claude", ".idea", "WorkingProjects", "archive"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B"]

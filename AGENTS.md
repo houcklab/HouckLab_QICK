@@ -17,7 +17,7 @@ charge-parity switching (`docs/experiments/zero_span_parity.md`).
 
 ```
 qicklab/              the package; layers in import order, lowest first
-  hardware/           rfsoc (Pyro4 proxy), board (BASE_CONFIG), yoko, attenuator, sc5510a, pnax, synthhd
+  hardware/           rfsoc (Pyro4 proxy), board (BASE_CONFIG), yoko, attenuator, pnax, synthhd
   core/               ExperimentClass, device, session, params (registry), config, context, io, fakes
   analysis/           offline fits, IQ processing, parity classifiers (never imports qick)
   experiments/        one module per family: QICK program + ExperimentClass subclass
