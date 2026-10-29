@@ -117,10 +117,10 @@ class ChiShift(ExperimentClass):
 
 
         plt.figure(figNum + 1)
-        plt.plot(x_pts, avgamp_ground, label="Ground", color = 'red', ls = '-', marker = '.')
-        plt.plot(x_pts, avgamp_01, label="01", color = 'blue', ls = '-', marker = '.')
+        plt.semilogy(x_pts, avgamp_ground, label="Ground", color = 'red', ls = '-', marker = '.')
+        plt.semilogy(x_pts, avgamp_01, label="01", color = 'blue', ls = '-', marker = '.')
 
-        plt.ylabel("a.u.")
+        plt.ylabel("a.u., log units")
         plt.xlabel("Cavity Frequency (GHz)")
         plt.legend()
         plt.title(self.titlename)
