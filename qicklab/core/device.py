@@ -13,6 +13,7 @@ import copy
 import dataclasses
 import math
 import numbers
+import re
 import warnings
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -140,9 +141,26 @@ class Setup:
         return base_config() | copy.deepcopy(dict(self.board_overrides))
 
 
+FAB_PATTERN = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
+PACKAGE_PATTERN = re.compile(r"^[a-z][a-z0-9]*$")
+
+
+def device_name(chip, package, fab):
+    """Structured device name `<chip>_<package>_fab<YYYY>_<MM>`, e.g. CSTQ03_nucell_fab2026_10.
+
+    The same string is the device file stem (devices/<name>.py), `Device.name` (recorded in every
+    saved file's provenance) and the data folder under the cooldown root.
+    """
+    return f"{chip}_{package}_fab{fab.replace('-', '_')}"
+
+
 @dataclass(frozen=True)
 class Device:
-    """One chip in one cooldown. `qubits` is read-only; `with_qubit` makes trial copies."""
+    """One chip in one cooldown. `qubits` is read-only; `with_qubit` makes trial copies.
+
+    `chip`, `package` and `fab` identify the physical sample when one design is fabricated or
+    packaged more than once; when set, `name` must be `device_name(chip, package, fab)`.
+    """
 
     name: str
     cooldown: str
@@ -152,6 +170,9 @@ class Device:
     cavity_min: bool = True  # resonator is a dip in transmission
     readout_window: ReadoutWindow = ReadoutWindow(15, 0.3)  # regime A default
     ss_window: ReadoutWindow = ReadoutWindow(15, 0.3)  # regime B default
+    chip: str = ""  # chip design, e.g. "CSTQ03"
+    package: str = ""  # sample package, short lowercase tag: "nucell", "qcage"
+    fab: str = ""  # fabrication month, "YYYY-MM"
 
     def __post_init__(self):
         _freeze(self, "qubits")
@@ -259,6 +280,7 @@ def _check_fields(dev):
     errors, warns = [], []
     if not isinstance(dev.qubits, Mapping) or not dev.qubits:
         return ["qubits must be a non-empty dict {1: Qubit, ...}"], warns
+    errors += _check_identity(dev)
     keys = list(dev.qubits)
     if any(isinstance(k, bool) or not isinstance(k, int) for k in keys) or sorted(keys) != list(
         range(1, len(keys) + 1)
@@ -344,6 +366,25 @@ def _check_fields(dev):
                         f"(> {tol:.3f} MHz): wrong qubit or stale value?"
                     )
     return errors, warns
+
+
+def _check_identity(dev):
+    """chip / package / fab: all empty, or all set with name == device_name(chip, package, fab)."""
+    given = {"chip": dev.chip, "package": dev.package, "fab": dev.fab}
+    if not any(given.values()):
+        return []
+    missing = [k for k, v in given.items() if not v]
+    if missing:
+        return [f"chip, package and fab are set together; missing {missing}"]
+    errors = []
+    if not FAB_PATTERN.match(dev.fab):
+        errors.append(f"fab must be 'YYYY-MM', got {dev.fab!r}")
+    if not PACKAGE_PATTERN.match(dev.package):
+        errors.append(f"package must be a short lowercase tag like 'nucell', got {dev.package!r}")
+    expected = device_name(dev.chip, dev.package, dev.fab)
+    if not errors and dev.name != expected:
+        errors.append(f"name must be device_name(chip, package, fab) = {expected!r}")
+    return errors
 
 
 def _check_window(where, win):

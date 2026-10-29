@@ -340,6 +340,7 @@ def record_calibration(device, q, *, step=None, **values):
         "time": iso_time(time.time()),
         "device": device.name,
         "cooldown": device.cooldown,
+        **{k: getattr(device, k) for k in ("chip", "package", "fab") if getattr(device, k)},
         "qubit": q,
         "step": step,
         "values": values,

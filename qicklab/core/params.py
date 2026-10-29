@@ -150,8 +150,15 @@ def _from(scope, *keywords, rename=None):
 
 _DEVICE = (
     # (key, units, meaning, layer, read_by, notes)
-    ("Device.name", "text", "chip name; recorded in every saved file's provenance", "core",
-     "connect io.start_session record_calibration", ""),
+    ("Device.name", "text", "device name; recorded in every saved file's provenance", "core",
+     "connect io.start_session record_calibration",
+     "with chip/package/fab set it must be <chip>_<package>_fab<YYYY>_<MM> (= the file stem)"),
+    ("Device.chip", "text", "chip design, e.g. CSTQ03", "core",
+     "Device.validate record_calibration", "empty: no structured identity"),
+    ("Device.package", "text", "sample package, short lowercase tag (nucell, qcage)", "core",
+     "Device.validate record_calibration", "set together with chip and fab"),
+    ("Device.fab", "text", "fabrication month YYYY-MM", "core",
+     "Device.validate record_calibration", "set together with chip and package"),
     ("Device.cooldown", "text", "cooldown date or label of this device file", "core",
      "io.start_session record_calibration", ""),
     ("Device.data_root", "text", "data root; qubit q saves under <data_root>/Q{q}//", "core",
