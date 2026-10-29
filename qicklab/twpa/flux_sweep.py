@@ -14,7 +14,12 @@ import pyvisa
 from qicklab.core.io import write_provenance
 from qicklab.hardware.pnax import band_mean_dB, measure_s21_band
 from qicklab.hardware.yoko import enable_current_output_safely, pick_current_range, ramp_current
-from qicklab.twpa.common import append_state, read_bias_state, timestamped_paths
+from qicklab.twpa.common import (
+    TWPA_STATE_DIR,
+    append_state,
+    read_bias_state,
+    timestamped_paths,
+)
 from qicklab.twpa.set_bias import STEP_PERIOD_S, TWPA_YOKO_ADDRESS, MAX_RATE_nA_per_s
 
 PNAX_ADDRESS = "GPIB0::16::INSTR"
@@ -36,7 +41,7 @@ PNAX_POWER_dBm = -25.0  # keep low: TWPA is unbiased much of the sweep
 PNAX_N_AVG = 4  # sweep-averaging count (1 = off)
 PNAX_TIMEOUT_MS = 30000
 
-SAVE_DIR = r"V:/t1Team/Data/2026-10-01_BFC_cooldown/TWPA_calibration"
+SAVE_DIR = TWPA_STATE_DIR  # this cooldown's TWPA folder (set in qicklab.twpa.common)
 RUN_TAG = "first_period_sweep"
 
 

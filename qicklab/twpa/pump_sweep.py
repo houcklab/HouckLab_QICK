@@ -19,6 +19,7 @@ from qicklab.core.io import write_provenance
 from qicklab.hardware.pnax import band_mean_dB, measure_s21_band
 from qicklab.hardware.synthhd import SynthHD, set_pump_channels
 from qicklab.twpa.common import (
+    TWPA_STATE_DIR,
     append_state,
     bias_npz_fields,
     pump_state,
@@ -55,7 +56,7 @@ PNAX_POWER_dBm = -25.0  # keep low — the TWPA may be under-pumped at start
 PNAX_N_AVG = 100  # sweep-averaging count (1 = off)
 PNAX_TIMEOUT_MS = 30000  # floor of the estimated VISA timeout
 
-SAVE_DIR = r"V:/t1Team/Data/2026-10-01_BFC_cooldown/TWPA_calibration"
+SAVE_DIR = TWPA_STATE_DIR  # this cooldown's TWPA folder (set in qicklab.twpa.common)
 RUN_TAG = "pump_sweep"
 
 

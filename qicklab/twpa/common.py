@@ -8,10 +8,12 @@ import time
 
 from qicklab.hardware.yoko import TWPA_YOKO_ADDRESS, _func, _is_on
 
-# One TWPA state log for every script: <TWPA_STATE_DIR>/twpa_state.jsonl, one JSON object per line
-# (bias readback, pump state, PNA-X settings). The SynthHD cannot be queried without switching the
-# pump off, so this log is the only record of the pump state. docs/experiments/twpa.md#state-log
-TWPA_STATE_DIR = r"V:/t1Team/Data/2026-10-01_BFC_cooldown/TWPA_calibration"
+# The current cooldown's TWPA calibration folder: the one line to change per cooldown. It holds
+# every script's data files (their SAVE_DIR defaults to it) and the state log
+# <TWPA_STATE_DIR>/twpa_state.jsonl, one JSON object per line (bias readback, pump state, PNA-X
+# settings). The SynthHD cannot be queried without switching the pump off, so this log is the
+# only record of the pump state. docs/experiments/twpa.md#state-log
+TWPA_STATE_DIR = r"V:/t1Team/Data/2026-10-29_BFC_cooldown/TWPA_calibration"
 TWPA_STATE_FILE = "twpa_state.jsonl"
 
 

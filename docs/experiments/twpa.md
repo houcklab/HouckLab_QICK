@@ -132,7 +132,7 @@ python -m qicklab.twpa.gain_compare      # --off: switch the pump off after a co
 | TWPA bias YOKO | `GPIB1::12::INSTR`, current-source mode, connected directly to the TWPA bias port. This is not the charge-line YOKO at `GPIB1::9`. |
 | Pump | Windfreak SynthHD on `COM5`, locked to the external 10 MHz reference on connect. |
 | PNA-X | `GPIB0::16::INSTR`, Keysight N52xx SCPI. |
-| Output | `<SAVE_DIR>/<%Y%m%d_%H%M%S>_<RUN_TAG>.npz/.png`. `flux_sweep` and `gain_compare` save the npz after each point; `pump_sweep` saves it once per pump-frequency row and once more on exit if a row was interrupted, atomically (`<npz>.tmp`, then rename); a failed write prints a warning and the sweep continues (the next row retries). If the rename fails after a complete write, the warning names `<npz>.tmp`, which is kept and holds the newest data. If the last save still fails on exit, the run ends with a `data NOT saved` warning instead of `Saved: <npz>`. Each save also (re)writes `<stem>_provenance.json` (code version, host, last bias ramp, start/end time; [architecture](../architecture.md#provenance)). CSTQ03 2026-10-01 cooldown: `V:/t1Team/Data/2026-10-01_BFC_cooldown/TWPA_calibration`. |
+| Output | `<SAVE_DIR>/<%Y%m%d_%H%M%S>_<RUN_TAG>.npz/.png`. `flux_sweep` and `gain_compare` save the npz after each point; `pump_sweep` saves it once per pump-frequency row and once more on exit if a row was interrupted, atomically (`<npz>.tmp`, then rename); a failed write prints a warning and the sweep continues (the next row retries). If the rename fails after a complete write, the warning names `<npz>.tmp`, which is kept and holds the newest data. If the last save still fails on exit, the run ends with a `data NOT saved` warning instead of `Saved: <npz>`. Each save also (re)writes `<stem>_provenance.json` (code version, host, last bias ramp, start/end time; [architecture](../architecture.md#provenance)). Every script's `SAVE_DIR` is `TWPA_STATE_DIR` of `qicklab.twpa.common`, the one line to change per cooldown; 2026-10-29 cooldown: `V:/t1Team/Data/2026-10-29_BFC_cooldown/TWPA_calibration` (2026-10-01: `V:/t1Team/Data/2026-10-01_BFC_cooldown/TWPA_calibration`). |
 
 **Per-script settings** (legacy constants, CSTQ03 values).
 
@@ -150,7 +150,7 @@ python -m qicklab.twpa.gain_compare      # --off: switch the pump off after a co
 | gain_compare | band | 2–10 GHz, 401 points, IF BW 1000 Hz, −25 dBm, 60 s timeout |
 | gain_compare | repeats | 10 OFF/ON pairs, 0.30 s settle after each pump toggle |
 | gain_compare | `LEAVE_PUMP_ON` | True: a completed run leaves the pump ON |
-| all | `TWPA_STATE_DIR` (`qicklab.twpa.common`) | `V:/t1Team/Data/2026-10-01_BFC_cooldown/TWPA_calibration` |
+| all | `TWPA_STATE_DIR` (`qicklab.twpa.common`), also every `SAVE_DIR` | `V:/t1Team/Data/2026-10-29_BFC_cooldown/TWPA_calibration` |
 
 ## Outputs
 
@@ -174,7 +174,7 @@ python -m qicklab.twpa.gain_compare      # --off: switch the pump off after a co
 
 ### State log
 
-`<TWPA_STATE_DIR>/twpa_state.jsonl` (`qicklab.twpa.common.TWPA_STATE_DIR`, the CSTQ03 TWPA
+`<TWPA_STATE_DIR>/twpa_state.jsonl` (`qicklab.twpa.common.TWPA_STATE_DIR`, the current cooldown's TWPA
 calibration folder; one shared file for all five scripts). Each script appends one JSON object
 on exit, including Ctrl-C and errors, from the point where it can change the TWPA state: once
 the YOKO (and PNA-X) are open, before the first write (`set_bias`, `flux_sweep`), or from the

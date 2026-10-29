@@ -15,6 +15,7 @@ import pyvisa
 from qicklab.core.io import write_provenance
 from qicklab.hardware.synthhd import SynthHD, set_pump_channels
 from qicklab.twpa.common import (
+    TWPA_STATE_DIR,
     append_state,
     bias_npz_fields,
     pump_state,
@@ -46,7 +47,7 @@ PNAX_IF_BW_HZ = 1000.0
 PNAX_POWER_dBm = -25.0  # keep low — signal must not saturate the TWPA
 PNAX_TIMEOUT_MS = 60000
 
-SAVE_DIR = r"V:/t1Team/Data/2026-10-01_BFC_cooldown/TWPA_calibration"
+SAVE_DIR = TWPA_STATE_DIR  # this cooldown's TWPA folder (set in qicklab.twpa.common)
 RUN_TAG = "gain_on_vs_off"
 
 
