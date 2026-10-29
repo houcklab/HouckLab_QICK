@@ -70,7 +70,7 @@ def main():
     )
     print()
     print("BEFORE PROCEEDING, CONFIRM:")
-    print("  [ ] TWPA pump generator (Holzworth HS9004A) RF output is OFF.")
+    print("  [ ] TWPA pump (Windfreak SynthHD) RF output is OFF.")
     print("  [ ] No other process is writing to this YOKO.")
     print("  [ ] TWPA_YOKO_ADDRESS matches the physical wiring and the YOKO is")
     print("      wired to source current directly into the TWPA bias line.")

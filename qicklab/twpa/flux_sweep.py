@@ -145,7 +145,7 @@ def main():
     print(f"  save dir        : {SAVE_DIR}")
     print()
     print("CONFIRM:")
-    print("  [ ] TWPA pump generator (Holzworth HS9004A) RF output is OFF.")
+    print("  [ ] TWPA pump (Windfreak SynthHD) RF output is OFF.")
     print(f"  [ ] PNA-X RF output safe at {PNAX_POWER_dBm:+.1f} dBm into the line.")
     print("  [ ] YOKO and PNA-X addresses match the physical wiring; YOKO is")
     print("      wired to source current directly into the TWPA bias line.")

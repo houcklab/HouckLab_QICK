@@ -275,8 +275,6 @@ a script. QICK sessions do not read it yet (no `twpa_*` keys in the experiment c
   - `pump_sweep` comments described a 12.0–13.5 GHz, −25 → 0 dBm grid ("25 MHz spacing across
     12.0–13.5 GHz (centered on ~12.7 GHz)", "0.5 dB spacing across -25 → 0 dBm"). The configured
     grid is 10.70–10.73 GHz and −10 → 0 dBm.
-- The `set_bias` and `flux_sweep` confirmation prompts still name a Holzworth HS9004A as the
-  pump generator. The pump is a Windfreak SynthHD.
 - `flux_sweep`, `pump_sweep` and `gain_compare` open the PNA-X (and the YOKO) outside
   the `try` block. If the SynthHD connection fails, the PNA-X is left open.
 - `flux_sweep` uses a fixed VISA timeout. Raising the averages or points, or lowering

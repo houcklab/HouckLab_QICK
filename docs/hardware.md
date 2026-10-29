@@ -278,8 +278,6 @@ Every experiment writes four files with one timestamp:
   a validation error left the yoko open and on.
 - `pick_current_range` / the TWPA bias script: the 25 uA safety cap equals the hard limit, so the
   `ALLOW_CALIBRATION` branch is unreachable, and the "about 11 uA" guidance is not enforced.
-- The TWPA bias script and the flux sweep confirmation prompts still name a Holzworth HS9004A as
-  the pump; the pump is the Windfreak SynthHD.
 - The set-pump script is committed with `DISABLE_PUMP = True`: run without `--on`, it only turns
   the pump off.
 - `flux_sweep`, `pump_sweep` and `gain_compare` open the PNA-X before the `try` block
