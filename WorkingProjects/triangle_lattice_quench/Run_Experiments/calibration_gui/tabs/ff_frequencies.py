@@ -24,9 +24,18 @@ from PyQt5.QtWidgets import (
     QListWidget, QListWidgetItem, QMessageBox, QPushButton, QVBoxLayout, QWidget,
 )
 
-from triangle_lattice_quench.Device_Calibration.LEGACY.Initialize_Qubit_Information import model_mapping
-from triangle_lattice_quench.Device_Calibration.LEGACY.Whole_system_to_Voltages import flux_vector, beta_matrix
-from triangle_lattice_quench.Device_Calibration.LEGACY.Device_calibration import full_device_calib
+# The legacy flux model reads the lab drive (Z:\...\Dictionary_File) at import time. Off the lab
+# network that raises, which used to stop the whole GUI from opening. Load it if we can; otherwise
+# only the FF->frequency features are disabled and they report why.
+try:
+    from triangle_lattice_quench.Device_Calibration.LEGACY.Initialize_Qubit_Information import model_mapping
+    from triangle_lattice_quench.Device_Calibration.LEGACY.Whole_system_to_Voltages import flux_vector, beta_matrix
+    from triangle_lattice_quench.Device_Calibration.LEGACY.Device_calibration import full_device_calib
+    FLUX_MODEL_ERROR = None
+except Exception as exc:  # e.g. Z:\ not mounted, or Dictionary_File folder empty
+    model_mapping = flux_vector = beta_matrix = full_device_calib = None
+    FLUX_MODEL_ERROR = exc
+    print(f"[calibration_gui] Flux model unavailable, FF->frequency features disabled: {exc!r}")
 
 from ..state import CalibState, _FF_FREQ_COUPLED_PAIRS
 from ..helpers import (
@@ -641,6 +650,8 @@ class FFFrequenciesTab(QWidget):
         """
         import numpy as np
 
+        if model_mapping is None:
+            raise RuntimeError(f"Flux model not loaded (lab drive unavailable): {FLUX_MODEL_ERROR!r}")
         bare_qubits   = [f'Q{i}_bare' for i in range(1, 9)]
         bare_couplers = ['C1', 'C2', 'C3', 'C4', 'C5', 'C6']
         bare_all      = bare_qubits + bare_couplers

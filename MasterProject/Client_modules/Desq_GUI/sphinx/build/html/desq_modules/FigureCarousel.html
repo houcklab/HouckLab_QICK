@@ -1,0 +1,837 @@
+<!doctype html>
+<html class="no-js" lang="en" data-content_root="../">
+  <head><meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="index" title="Index" href="../genindex.html"><link rel="search" title="Search" href="../search.html"><link rel="next" title="SmartFitter" href="SmartFitter.html"><link rel="prev" title="LoadDataWindow" href="LoadDataWindow.html">
+
+    <!-- Generated with Sphinx 9.1.0 and Furo 2025.12.19 -->
+        <title>FigureCarousel - Desq 1.0.0 Beta documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=d111a655" />
+    <link rel="stylesheet" type="text/css" href="../_static/styles/furo.css?v=7bdb33bb" />
+    <link rel="stylesheet" type="text/css" href="../_static/styles/furo-extensions.css?v=8dab3a3b" />
+    
+    
+
+
+<style>
+  body {
+    --color-code-background: #f2f2f2;
+  --color-code-foreground: #1e1e1e;
+  
+  }
+  @media not print {
+    body[data-theme="dark"] {
+      --color-code-background: #202020;
+  --color-code-foreground: #d0d0d0;
+  
+    }
+    @media (prefers-color-scheme: dark) {
+      body:not([data-theme="light"]) {
+        --color-code-background: #202020;
+  --color-code-foreground: #d0d0d0;
+  
+      }
+    }
+  }
+</style></head>
+  <body>
+    
+    <script>
+      document.body.dataset.theme = localStorage.getItem("theme") || "auto";
+    </script>
+    
+
+<svg xmlns="http://www.w3.org/2000/svg" style="display: none;">
+  <symbol id="svg-toc" viewBox="0 0 24 24">
+    <title>Contents</title>
+    <svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 1024 1024">
+      <path d="M408 442h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8zm-8 204c0 4.4 3.6 8 8 8h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56zm504-486H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zm0 632H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zM115.4 518.9L271.7 642c5.8 4.6 14.4.5 14.4-6.9V388.9c0-7.4-8.5-11.5-14.4-6.9L115.4 505.1a8.74 8.74 0 0 0 0 13.8z"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-menu" viewBox="0 0 24 24">
+    <title>Menu</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-menu">
+      <line x1="3" y1="12" x2="21" y2="12"></line>
+      <line x1="3" y1="6" x2="21" y2="6"></line>
+      <line x1="3" y1="18" x2="21" y2="18"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-arrow-right" viewBox="0 0 24 24">
+    <title>Expand</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-chevron-right">
+      <polyline points="9 18 15 12 9 6"></polyline>
+    </svg>
+  </symbol>
+  <symbol id="svg-sun" viewBox="0 0 24 24">
+    <title>Light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="feather-sun">
+      <circle cx="12" cy="12" r="5"></circle>
+      <line x1="12" y1="1" x2="12" y2="3"></line>
+      <line x1="12" y1="21" x2="12" y2="23"></line>
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+      <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+      <line x1="1" y1="12" x2="3" y2="12"></line>
+      <line x1="21" y1="12" x2="23" y2="12"></line>
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+      <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon" viewBox="0 0 24 24">
+    <title>Dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-moon">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M12 3c.132 0 .263 0 .393 0a7.5 7.5 0 0 0 7.92 12.446a9 9 0 1 1 -8.313 -12.454z" />
+    </svg>
+  </symbol>
+  <symbol id="svg-sun-with-moon" viewBox="0 0 24 24">
+    <title>Auto light/dark, in light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path style="opacity: 50%" d="M 5.411 14.504 C 5.471 14.504 5.532 14.504 5.591 14.504 C 3.639 16.319 4.383 19.569 6.931 20.352 C 7.693 20.586 8.512 20.551 9.25 20.252 C 8.023 23.207 4.056 23.725 2.11 21.184 C 0.166 18.642 1.702 14.949 4.874 14.536 C 5.051 14.512 5.231 14.5 5.411 14.5 L 5.411 14.504 Z"/>
+      <line x1="14.5" y1="3.25" x2="14.5" y2="1.25"/>
+      <line x1="14.5" y1="15.85" x2="14.5" y2="17.85"/>
+      <line x1="10.044" y1="5.094" x2="8.63" y2="3.68"/>
+      <line x1="19" y1="14.05" x2="20.414" y2="15.464"/>
+      <line x1="8.2" y1="9.55" x2="6.2" y2="9.55"/>
+      <line x1="20.8" y1="9.55" x2="22.8" y2="9.55"/>
+      <line x1="10.044" y1="14.006" x2="8.63" y2="15.42"/>
+      <line x1="19" y1="5.05" x2="20.414" y2="3.636"/>
+      <circle cx="14.5" cy="9.55" r="3.6"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon-with-sun" viewBox="0 0 24 24">
+    <title>Auto light/dark, in dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path d="M 8.282 7.007 C 8.385 7.007 8.494 7.007 8.595 7.007 C 5.18 10.184 6.481 15.869 10.942 17.24 C 12.275 17.648 13.706 17.589 15 17.066 C 12.851 22.236 5.91 23.143 2.505 18.696 C -0.897 14.249 1.791 7.786 7.342 7.063 C 7.652 7.021 7.965 7 8.282 7 L 8.282 7.007 Z"/>
+      <line style="opacity: 50%" x1="18" y1="3.705" x2="18" y2="2.5"/>
+      <line style="opacity: 50%" x1="18" y1="11.295" x2="18" y2="12.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="4.816" x2="14.464" y2="3.964"/>
+      <line style="opacity: 50%" x1="20.711" y1="10.212" x2="21.563" y2="11.063"/>
+      <line style="opacity: 50%" x1="14.205" y1="7.5" x2="13.001" y2="7.5"/>
+      <line style="opacity: 50%" x1="21.795" y1="7.5" x2="23" y2="7.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="10.184" x2="14.464" y2="11.036"/>
+      <line style="opacity: 50%" x1="20.711" y1="4.789" x2="21.563" y2="3.937"/>
+      <circle style="opacity: 50%" cx="18" cy="7.5" r="2.169"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-pencil" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-pencil-code">
+      <path d="M4 20h4l10.5 -10.5a2.828 2.828 0 1 0 -4 -4l-10.5 10.5v4" />
+      <path d="M13.5 6.5l4 4" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+  <symbol id="svg-eye" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-eye-code">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M10 12a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" />
+      <path
+        d="M11.11 17.958c-3.209 -.307 -5.91 -2.293 -8.11 -5.958c2.4 -4 5.4 -6 9 -6c3.6 0 6.6 2 9 6c-.21 .352 -.427 .688 -.647 1.008" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+</svg>
+
+<input type="checkbox" class="sidebar-toggle" name="__navigation" id="__navigation" aria-label="Toggle site navigation sidebar">
+<input type="checkbox" class="sidebar-toggle" name="__toc" id="__toc" aria-label="Toggle table of contents sidebar">
+<label class="overlay sidebar-overlay" for="__navigation"></label>
+<label class="overlay toc-overlay" for="__toc"></label>
+
+<a class="skip-to-content muted-link" href="#furo-main-content">Skip to content</a>
+
+
+
+<div class="page">
+  <header class="mobile-header">
+    <div class="header-left">
+      <label class="nav-overlay-icon" for="__navigation">
+        <span class="icon"><svg><use href="#svg-menu"></use></svg></span>
+      </label>
+    </div>
+    <div class="header-center">
+      <a href="../index.html"><div class="brand">Desq 1.0.0 Beta documentation</div></a>
+    </div>
+    <div class="header-right">
+      <div class="theme-toggle-container theme-toggle-header">
+        <button class="theme-toggle" aria-label="Toggle Light / Dark / Auto color theme">
+          <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+          <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+          <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+          <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+        </button>
+      </div>
+      <label class="toc-overlay-icon toc-header-icon" for="__toc">
+        <span class="icon"><svg><use href="#svg-toc"></use></svg></span>
+      </label>
+    </div>
+  </header>
+  <aside class="sidebar-drawer">
+    <div class="sidebar-container">
+      
+      <div class="sidebar-sticky"><a class="sidebar-brand" href="../index.html">
+  
+  <span class="sidebar-brand-text">Desq 1.0.0 Beta documentation</span>
+  
+</a><form class="sidebar-search-container" method="get" action="../search.html" role="search">
+  <input class="sidebar-search" placeholder="Search" name="q" aria-label="Search">
+  <input type="hidden" name="check_keywords" value="yes">
+  <input type="hidden" name="area" value="default">
+</form>
+<div id="searchbox"></div><div class="sidebar-scroll"><div class="sidebar-tree">
+  <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1 current has-children"><a class="reference internal" href="../desq_modules.html">Desq</a><input aria-label="Toggle navigation of Desq" checked="" class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" role="switch" type="checkbox"/><label for="toctree-checkbox-1"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="Desq.html">Desq</a></li>
+<li class="toctree-l2"><a class="reference internal" href="DesqTab.html">DesqTab</a></li>
+<li class="toctree-l2"><a class="reference internal" href="ExperimentThread.html">ExperimentThread</a></li>
+<li class="toctree-l2"><a class="reference internal" href="ExperimentObject.html">ExperimentObject</a></li>
+<li class="toctree-l2"><a class="reference internal" href="CustomMenuBar.html">CustomMenuBar</a></li>
+<li class="toctree-l2"><a class="reference internal" href="ConfigTreePanel.html">ConfigTreePanel</a></li>
+<li class="toctree-l2"><a class="reference internal" href="AccountsPanel.html">AccountsPanel</a></li>
+<li class="toctree-l2"><a class="reference internal" href="VoltagePanel.html">VoltagePanel</a></li>
+<li class="toctree-l2"><a class="reference internal" href="LogPanel.html">LogPanel</a></li>
+<li class="toctree-l2"><a class="reference internal" href="ConfigCodeEditor.html">ConfigCodeEditor</a></li>
+<li class="toctree-l2"><a class="reference internal" href="SettingsWindow.html">SettingsWindow</a></li>
+<li class="toctree-l2"><a class="reference internal" href="AuxiliaryThread.html">AuxiliaryThread</a></li>
+<li class="toctree-l2"><a class="reference internal" href="Helpers.html">Helpers</a></li>
+<li class="toctree-l2"><a class="reference internal" href="BackendDesq.html">BackendDesq</a></li>
+<li class="toctree-l2"><a class="reference internal" href="ConfigManager.html">ConfigManager</a></li>
+<li class="toctree-l2"><a class="reference internal" href="CheckboxDialogs.html">CheckboxDialogs</a></li>
+<li class="toctree-l2"><a class="reference internal" href="ExperimentLoader.html">ExperimentLoader</a></li>
+<li class="toctree-l2"><a class="reference internal" href="ImageViewTab.html">ImageViewTab</a></li>
+<li class="toctree-l2"><a class="reference internal" href="PlotSinkManager.html">PlotSinkManager</a></li>
+<li class="toctree-l2"><a class="reference internal" href="LoadDataWindow.html">LoadDataWindow</a></li>
+<li class="toctree-l2 current current-page"><a class="current reference internal" href="#">FigureCarousel</a></li>
+<li class="toctree-l2"><a class="reference internal" href="SmartFitter.html">SmartFitter</a></li>
+<li class="toctree-l2"><a class="reference internal" href="DirectoryTreePanel.html">DirectoryTreePanel</a></li>
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../experiment_hub.html">Experiment Hub</a><input aria-label="Toggle navigation of Experiment Hub" class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" role="switch" type="checkbox"/><label for="toctree-checkbox-2"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../experiment_hub/Experiment.html">Experiment</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../experiment_hub/MockExperiments.html">MockExperiments</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../experiment_hub/MockExperimentsAdv.html">MockExperimentsAdv</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../experiment_hub/MockConfigExtractor.html">MockConfigExtractor</a></li>
+</ul>
+</li>
+</ul>
+
+</div>
+</div>
+
+      </div>
+      
+    </div>
+  </aside>
+  <div class="main">
+    <div class="content">
+      <div class="article-container">
+        <a href="#" class="back-to-top muted-link">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+            <path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8v12z"></path>
+          </svg>
+          <span>Back to top</span>
+        </a>
+        <div class="content-icon-container">
+          <div class="view-this-page">
+  <a class="muted-link" href="../_sources/desq_modules/FigureCarousel.rst.txt" title="View this page">
+    <svg><use href="#svg-eye"></use></svg>
+    <span class="visually-hidden">View this page</span>
+  </a>
+</div>
+<div class="theme-toggle-container theme-toggle-content">
+            <button class="theme-toggle" aria-label="Toggle Light / Dark / Auto color theme">
+              <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+              <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+              <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+              <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+            </button>
+          </div>
+          <label class="toc-overlay-icon toc-content-icon" for="__toc">
+            <span class="icon"><svg><use href="#svg-toc"></use></svg></span>
+          </label>
+        </div>
+        <article role="main" id="furo-main-content">
+          <section id="module-scripts.FigureCarousel">
+<span id="figurecarousel"></span><h1>FigureCarousel<a class="headerlink" href="#module-scripts.FigureCarousel" title="Link to this heading">¶</a></h1>
+<section id="figurecarousel-py">
+<h2>FigureCarousel.py<a class="headerlink" href="#figurecarousel-py" title="Link to this heading">¶</a></h2>
+<p>A horizontally scrollable carousel of figure thumbnails for multi-figure navigation.</p>
+<p>This module provides widgets for displaying and navigating between multiple matplotlib
+figures or PyQtGraph snapshots in a thumbnail carousel interface.</p>
+<section id="design-decisions">
+<h3>Design Decisions<a class="headerlink" href="#design-decisions" title="Link to this heading">¶</a></h3>
+<ul class="simple">
+<li><p>Carousel is hidden when only one figure exists (cleaner UI)</p></li>
+<li><p>Newest figure becomes active by default</p></li>
+<li><p>Clicking thumbnail does NOT re-run experiment, just switches display</p></li>
+<li><p>Full clear on rerun/replot to prevent cross-run figure mixing</p></li>
+</ul>
+</section>
+<section id="memory-management">
+<h3>Memory Management<a class="headerlink" href="#memory-management" title="Link to this heading">¶</a></h3>
+<ul class="simple">
+<li><p>Properly disposes QPixmaps when thumbnails are removed</p></li>
+<li><p>Figure references are stored but NOT owned (PlotManager handles lifecycle)</p></li>
+</ul>
+<div class="admonition seealso">
+<p class="admonition-title">See also</p>
+<p><a class="reference internal" href="#scripts.FigureCarousel.ThumbnailWidget" title="scripts.FigureCarousel.ThumbnailWidget"><code class="xref py py-class docutils literal notranslate"><span class="pre">ThumbnailWidget</span></code></a> for individual thumbnail display
+<a class="reference internal" href="#scripts.FigureCarousel.FigureCarousel" title="scripts.FigureCarousel.FigureCarousel"><code class="xref py py-class docutils literal notranslate"><span class="pre">FigureCarousel</span></code></a> for the main carousel container</p>
+</div>
+</section>
+</section>
+<dl class="py class">
+<dt class="sig sig-object py" id="scripts.FigureCarousel.FigureCarousel">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">scripts.FigureCarousel.</span></span><span class="sig-name descname"><span class="pre">FigureCarousel</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">parent</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">QWidget</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#scripts.FigureCarousel.FigureCarousel" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">QWidget</span></code></p>
+<p>A horizontally scrollable carousel of figure thumbnails.</p>
+<p>Supports both matplotlib figures and PyQtGraph snapshot pixmaps.
+The carousel automatically shows/hides based on the number of figures
+(hidden for 0-1 figures, visible for 2+ figures).</p>
+<p>Usage:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">carousel</span> <span class="o">=</span> <span class="n">FigureCarousel</span><span class="p">()</span>
+<span class="n">carousel</span><span class="o">.</span><span class="n">add_figure</span><span class="p">(</span><span class="n">mpl_figure</span><span class="p">)</span>  <span class="c1"># For matplotlib</span>
+<span class="n">carousel</span><span class="o">.</span><span class="n">add_pixmap</span><span class="p">(</span><span class="n">qpixmap</span><span class="p">,</span> <span class="n">identifier</span><span class="p">)</span>  <span class="c1"># For pyqtgraph snapshots</span>
+<span class="n">carousel</span><span class="o">.</span><span class="n">figure_selected</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="n">on_figure_changed</span><span class="p">)</span>
+</pre></div>
+</div>
+<dl class="field-list simple">
+<dt class="field-odd">Variables<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>figure_selected</strong> (<em>pyqtSignal</em><em>(</em><em>int</em><em>)</em>) – Signal emitted when a figure is selected, passing the index.</p></li>
+<li><p><strong>CAROUSEL_HEIGHT</strong> (<em>int</em>) – Total carousel height including padding.</p></li>
+</ul>
+</dd>
+</dl>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Figure references are stored but NOT owned by the carousel.
+The PlotManager or caller is responsible for figure lifecycle management.</p>
+</div>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="scripts.FigureCarousel.FigureCarousel.CAROUSEL_HEIGHT">
+<span class="sig-name descname"><span class="pre">CAROUSEL_HEIGHT</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">int</span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">100</span></span><a class="headerlink" href="#scripts.FigureCarousel.FigureCarousel.CAROUSEL_HEIGHT" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="scripts.FigureCarousel.FigureCarousel.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">parent</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">QWidget</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#scripts.FigureCarousel.FigureCarousel.__init__" title="Link to this definition">¶</a></dt>
+<dd><p>Initialize the figure carousel.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>parent</strong> (<em>Optional</em><em>[</em><em>QWidget</em><em>]</em>) – Optional parent widget.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="scripts.FigureCarousel.FigureCarousel.add_figure">
+<span class="sig-name descname"><span class="pre">add_figure</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">figure</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">make_active</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">int</span></span></span><a class="headerlink" href="#scripts.FigureCarousel.FigureCarousel.add_figure" title="Link to this definition">¶</a></dt>
+<dd><p>Add a matplotlib figure to the carousel.</p>
+<p>Generates a thumbnail by rendering the figure to an image buffer
+and creates a clickable thumbnail widget.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>figure</strong> (<em>matplotlib.figure.Figure</em>) – Matplotlib figure object to add.</p></li>
+<li><p><strong>make_active</strong> (<em>bool</em>) – If True, this figure becomes the active display.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Index of the added figure in the carousel.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>int</p>
+</dd>
+</dl>
+<div class="admonition seealso">
+<p class="admonition-title">See also</p>
+<p><a class="reference internal" href="#scripts.FigureCarousel.FigureCarousel.add_pixmap" title="scripts.FigureCarousel.FigureCarousel.add_pixmap"><code class="xref py py-meth docutils literal notranslate"><span class="pre">add_pixmap()</span></code></a> for adding pre-rendered PyQtGraph snapshots.</p>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="scripts.FigureCarousel.FigureCarousel.add_pixmap">
+<span class="sig-name descname"><span class="pre">add_pixmap</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">pixmap</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">QPixmap</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">identifier</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">make_active</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">int</span></span></span><a class="headerlink" href="#scripts.FigureCarousel.FigureCarousel.add_pixmap" title="Link to this definition">¶</a></dt>
+<dd><p>Add a pre-rendered pixmap to the carousel (for PyQtGraph).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>pixmap</strong> (<em>QPixmap</em>) – QPixmap of the figure snapshot.</p></li>
+<li><p><strong>identifier</strong> (<em>Any</em>) – Optional identifier to associate with this entry.
+Can be used to track which PyQtGraph widget this pixmap came from.</p></li>
+<li><p><strong>make_active</strong> (<em>bool</em>) – If True, this becomes the active selection.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Index of the added entry in the carousel.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>int</p>
+</dd>
+</dl>
+<div class="admonition seealso">
+<p class="admonition-title">See also</p>
+<p><a class="reference internal" href="#scripts.FigureCarousel.FigureCarousel.add_figure" title="scripts.FigureCarousel.FigureCarousel.add_figure"><code class="xref py py-meth docutils literal notranslate"><span class="pre">add_figure()</span></code></a> for adding matplotlib figures.</p>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="scripts.FigureCarousel.FigureCarousel.clear">
+<span class="sig-name descname"><span class="pre">clear</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">close_figures</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#scripts.FigureCarousel.FigureCarousel.clear" title="Link to this definition">¶</a></dt>
+<dd><p>Clear all figures and thumbnails from the carousel.</p>
+<p>This method is called on rerun/replot to prevent cross-run mixing
+of figures from different experiment runs.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>close_figures</strong> (<em>bool</em>) – If True, close matplotlib figures to remove from
+global registry. This prevents old figures from being re-captured
+by new experiments.</p>
+</dd>
+</dl>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p><strong>CRITICAL</strong>: This must be called on rerun/replot to prevent
+cross-run figure mixing which can cause confusing UI behavior.</p>
+</div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Uses print() instead of qInfo() to avoid threading issues when
+called from non-main threads.</p>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="scripts.FigureCarousel.FigureCarousel.figure_count">
+<span class="sig-name descname"><span class="pre">figure_count</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">int</span></span></span><a class="headerlink" href="#scripts.FigureCarousel.FigureCarousel.figure_count" title="Link to this definition">¶</a></dt>
+<dd><p>Return the number of figures in the carousel.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Count of figures currently in the carousel.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>int</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="scripts.FigureCarousel.FigureCarousel.figure_selected">
+<span class="sig-name descname"><span class="pre">figure_selected</span></span><a class="headerlink" href="#scripts.FigureCarousel.FigureCarousel.figure_selected" title="Link to this definition">¶</a></dt>
+<dd><p>pyqtSignal(<a href="#id1"><span class="problematic" id="id2">*</span></a>types, name: str = …, revision: int = …, arguments: Sequence = …) -&gt; PYQT_SIGNAL</p>
+<p>types is normally a sequence of individual types.  Each type is either a
+type object or a string that is the name of a C++ type.  Alternatively
+each type could itself be a sequence of types each describing a different
+overloaded signal.
+name is the optional C++ name of the signal.  If it is not specified then
+the name of the class attribute that is bound to the signal is used.
+revision is the optional revision of the signal that is exported to QML.
+If it is not specified then 0 is used.
+arguments is the optional sequence of the names of the signal’s arguments.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="scripts.FigureCarousel.FigureCarousel.find_figure_index">
+<span class="sig-name descname"><span class="pre">find_figure_index</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">figure</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">int</span></span></span><a class="headerlink" href="#scripts.FigureCarousel.FigureCarousel.find_figure_index" title="Link to this definition">¶</a></dt>
+<dd><p>Find index of a figure by identity.</p>
+<p>Uses Python object identity (id()) for comparison, not equality.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>figure</strong> (<em>Any</em>) – Figure to find.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Index of the figure, or -1 if not found.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>int</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="scripts.FigureCarousel.FigureCarousel.get_figure_data">
+<span class="sig-name descname"><span class="pre">get_figure_data</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">index</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Any</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span></span><a class="headerlink" href="#scripts.FigureCarousel.FigureCarousel.get_figure_data" title="Link to this definition">¶</a></dt>
+<dd><p>Get figure/data at the given index.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>index</strong> (<em>int</em>) – Index of the figure data to retrieve.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>The figure data at the index, or None if index is invalid.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Optional[Any]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="scripts.FigureCarousel.FigureCarousel.get_selected_figure_data">
+<span class="sig-name descname"><span class="pre">get_selected_figure_data</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Any</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span></span><a class="headerlink" href="#scripts.FigureCarousel.FigureCarousel.get_selected_figure_data" title="Link to this definition">¶</a></dt>
+<dd><p>Get the currently selected figure/data.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>The data associated with the selected figure, or None.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>Optional[Any]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="scripts.FigureCarousel.FigureCarousel.get_selected_index">
+<span class="sig-name descname"><span class="pre">get_selected_index</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">int</span></span></span><a class="headerlink" href="#scripts.FigureCarousel.FigureCarousel.get_selected_index" title="Link to this definition">¶</a></dt>
+<dd><p>Return the currently selected figure index.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Index of the selected figure, or -1 if none selected.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>int</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="scripts.FigureCarousel.FigureCarousel.has_figure">
+<span class="sig-name descname"><span class="pre">has_figure</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">figure</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">bool</span></span></span><a class="headerlink" href="#scripts.FigureCarousel.FigureCarousel.has_figure" title="Link to this definition">¶</a></dt>
+<dd><p>Check if a figure is already in the carousel (by identity).</p>
+<p>Uses Python object identity (id()) for comparison, not equality.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>figure</strong> (<em>Any</em>) – Figure to check for.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>True if the figure is in the carousel.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>bool</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="scripts.FigureCarousel.FigureCarousel.select_figure">
+<span class="sig-name descname"><span class="pre">select_figure</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">index</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#scripts.FigureCarousel.FigureCarousel.select_figure" title="Link to this definition">¶</a></dt>
+<dd><p>Select a figure by index.</p>
+<p>Updates visual selection state of all thumbnails, deselecting
+the previously selected thumbnail and selecting the new one.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>index</strong> (<em>int</em>) – Index of the figure to select.</p>
+</dd>
+</dl>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>If index is out of range, this method silently returns without error.</p>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="scripts.FigureCarousel.FigureCarousel.update_thumbnail">
+<span class="sig-name descname"><span class="pre">update_thumbnail</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">index</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">figure_or_pixmap</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">QPixmap</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">Any</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#scripts.FigureCarousel.FigureCarousel.update_thumbnail" title="Link to this definition">¶</a></dt>
+<dd><p>Update the thumbnail for a specific figure (for live updates).</p>
+<p>Creates a new thumbnail widget with the updated image and replaces
+the old one at the same position in the layout.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>index</strong> (<em>int</em>) – Index of the thumbnail to update.</p></li>
+<li><p><strong>figure_or_pixmap</strong> (<em>Union</em><em>[</em><em>QPixmap</em><em>, </em><em>matplotlib.figure.Figure</em><em>]</em>) – Either a matplotlib figure or a QPixmap.
+If a figure, a new thumbnail will be captured from it.</p></li>
+</ul>
+</dd>
+</dl>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>The selection state of the thumbnail is preserved during the update.</p>
+</div>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="scripts.FigureCarousel.ThumbnailWidget">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">scripts.FigureCarousel.</span></span><span class="sig-name descname"><span class="pre">ThumbnailWidget</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">index</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">pixmap</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">QPixmap</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">parent</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">QWidget</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#scripts.FigureCarousel.ThumbnailWidget" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">QFrame</span></code></p>
+<p>A clickable thumbnail widget that displays a figure preview.</p>
+<p>This widget renders a scaled snapshot of a matplotlib figure or PyQtGraph plot
+as a clickable thumbnail with visual selection state.</p>
+<dl class="simple">
+<dt>Features:</dt><dd><ul class="simple">
+<li><p>Displays scaled figure snapshot</p></li>
+<li><p>Visual selection indicator (border highlight)</p></li>
+<li><p>Clickable to select figure</p></li>
+<li><p>Proper memory management for QPixmap</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="field-list simple">
+<dt class="field-odd">Variables<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>clicked</strong> (<em>pyqtSignal</em><em>(</em><em>int</em><em>)</em>) – Signal emitted when the thumbnail is clicked, passing the figure index.</p></li>
+<li><p><strong>MAX_WIDTH</strong> (<em>int</em>) – Maximum thumbnail width in pixels.</p></li>
+<li><p><strong>MAX_HEIGHT</strong> (<em>int</em>) – Maximum thumbnail height in pixels.</p></li>
+<li><p><strong>SELECTED_BORDER_WIDTH</strong> (<em>int</em>) – Border width when selected.</p></li>
+<li><p><strong>NORMAL_BORDER_WIDTH</strong> (<em>int</em>) – Border width when not selected.</p></li>
+<li><p><strong>index</strong> (<em>int</em>) – The index of this thumbnail in the carousel.</p></li>
+</ul>
+</dd>
+</dl>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>The pixmap is stored internally but ownership remains with the caller.
+Call <a class="reference internal" href="#scripts.FigureCarousel.ThumbnailWidget.cleanup" title="scripts.FigureCarousel.ThumbnailWidget.cleanup"><code class="xref py py-meth docutils literal notranslate"><span class="pre">cleanup()</span></code></a> to properly dispose of pixmap resources.</p>
+</div>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="scripts.FigureCarousel.ThumbnailWidget.MAX_HEIGHT">
+<span class="sig-name descname"><span class="pre">MAX_HEIGHT</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">int</span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">80</span></span><a class="headerlink" href="#scripts.FigureCarousel.ThumbnailWidget.MAX_HEIGHT" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="scripts.FigureCarousel.ThumbnailWidget.MAX_WIDTH">
+<span class="sig-name descname"><span class="pre">MAX_WIDTH</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">int</span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">120</span></span><a class="headerlink" href="#scripts.FigureCarousel.ThumbnailWidget.MAX_WIDTH" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="scripts.FigureCarousel.ThumbnailWidget.NORMAL_BORDER_WIDTH">
+<span class="sig-name descname"><span class="pre">NORMAL_BORDER_WIDTH</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">int</span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">1</span></span><a class="headerlink" href="#scripts.FigureCarousel.ThumbnailWidget.NORMAL_BORDER_WIDTH" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="scripts.FigureCarousel.ThumbnailWidget.SELECTED_BORDER_WIDTH">
+<span class="sig-name descname"><span class="pre">SELECTED_BORDER_WIDTH</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">int</span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">3</span></span><a class="headerlink" href="#scripts.FigureCarousel.ThumbnailWidget.SELECTED_BORDER_WIDTH" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="scripts.FigureCarousel.ThumbnailWidget.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">index</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">pixmap</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">QPixmap</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">parent</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">QWidget</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#scripts.FigureCarousel.ThumbnailWidget.__init__" title="Link to this definition">¶</a></dt>
+<dd><p>Initialize a thumbnail widget.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>index</strong> (<em>int</em>) – The index of this thumbnail in the carousel (0-based).</p></li>
+<li><p><strong>pixmap</strong> (<em>QPixmap</em>) – The QPixmap to display as the thumbnail image.</p></li>
+<li><p><strong>parent</strong> (<em>Optional</em><em>[</em><em>QWidget</em><em>]</em>) – Optional parent widget.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="scripts.FigureCarousel.ThumbnailWidget.cleanup">
+<span class="sig-name descname"><span class="pre">cleanup</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#scripts.FigureCarousel.ThumbnailWidget.cleanup" title="Link to this definition">¶</a></dt>
+<dd><p>Properly dispose of pixmap resources.</p>
+<p>Releases both the original and scaled pixmaps by replacing them
+with empty QPixmap instances. Should be called before removing
+the widget from the carousel.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>This method should be called before <code class="xref py py-meth docutils literal notranslate"><span class="pre">deleteLater()</span></code> to ensure
+proper memory cleanup of Qt pixmap resources.</p>
+</div>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="scripts.FigureCarousel.ThumbnailWidget.clicked">
+<span class="sig-name descname"><span class="pre">clicked</span></span><a class="headerlink" href="#scripts.FigureCarousel.ThumbnailWidget.clicked" title="Link to this definition">¶</a></dt>
+<dd><p>pyqtSignal(<a href="#id3"><span class="problematic" id="id4">*</span></a>types, name: str = …, revision: int = …, arguments: Sequence = …) -&gt; PYQT_SIGNAL</p>
+<p>types is normally a sequence of individual types.  Each type is either a
+type object or a string that is the name of a C++ type.  Alternatively
+each type could itself be a sequence of types each describing a different
+overloaded signal.
+name is the optional C++ name of the signal.  If it is not specified then
+the name of the class attribute that is bound to the signal is used.
+revision is the optional revision of the signal that is exported to QML.
+If it is not specified then 0 is used.
+arguments is the optional sequence of the names of the signal’s arguments.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="scripts.FigureCarousel.ThumbnailWidget.index">
+<span class="sig-name descname"><span class="pre">index</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">int</span></span><a class="headerlink" href="#scripts.FigureCarousel.ThumbnailWidget.index" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="scripts.FigureCarousel.ThumbnailWidget.isSelected">
+<span class="sig-name descname"><span class="pre">isSelected</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">bool</span></span></span><a class="headerlink" href="#scripts.FigureCarousel.ThumbnailWidget.isSelected" title="Link to this definition">¶</a></dt>
+<dd><p>Return whether this thumbnail is selected.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>True if this thumbnail is currently selected.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>bool</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="scripts.FigureCarousel.ThumbnailWidget.mousePressEvent">
+<span class="sig-name descname"><span class="pre">mousePressEvent</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">event</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#scripts.FigureCarousel.ThumbnailWidget.mousePressEvent" title="Link to this definition">¶</a></dt>
+<dd><p>Handle mouse click to emit selection signal.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>event</strong> (<em>QMouseEvent</em>) – The mouse event.</p>
+</dd>
+</dl>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Only left-clicks trigger the <a class="reference internal" href="#scripts.FigureCarousel.ThumbnailWidget.clicked" title="scripts.FigureCarousel.ThumbnailWidget.clicked"><code class="xref py py-attr docutils literal notranslate"><span class="pre">clicked</span></code></a> signal.</p>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="scripts.FigureCarousel.ThumbnailWidget.paintEvent">
+<span class="sig-name descname"><span class="pre">paintEvent</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">event</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#scripts.FigureCarousel.ThumbnailWidget.paintEvent" title="Link to this definition">¶</a></dt>
+<dd><p>Paint the thumbnail image.</p>
+<p>Draws the scaled pixmap centered within the widget bounds.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>event</strong> (<em>QPaintEvent</em>) – The paint event.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="scripts.FigureCarousel.ThumbnailWidget.setSelected">
+<span class="sig-name descname"><span class="pre">setSelected</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">selected</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#scripts.FigureCarousel.ThumbnailWidget.setSelected" title="Link to this definition">¶</a></dt>
+<dd><p>Set the selection state of this thumbnail.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>selected</strong> (<em>bool</em>) – True to mark as selected, False otherwise.</p>
+</dd>
+</dl>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Only updates styling if the state actually changes.</p>
+</div>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+
+        </article>
+      </div>
+      <footer>
+        
+        <div class="related-pages">
+          <a class="next-page" href="SmartFitter.html">
+              <div class="page-info">
+                <div class="context">
+                  <span>Next</span>
+                </div>
+                <div class="title">SmartFitter</div>
+              </div>
+              <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
+            </a>
+          <a class="prev-page" href="LoadDataWindow.html">
+              <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
+              <div class="page-info">
+                <div class="context">
+                  <span>Previous</span>
+                </div>
+                
+                <div class="title">LoadDataWindow</div>
+                
+              </div>
+            </a>
+        </div>
+        <div class="bottom-of-page">
+          <div class="left-details">
+            <div class="copyright">
+                Copyright &#169; 2025, Lev, Jake, Matt, Sonny
+            </div>
+            Made with <a href="https://www.sphinx-doc.org/">Sphinx</a> and <a class="muted-link" href="https://pradyunsg.me">@pradyunsg</a>'s
+            
+            <a href="https://github.com/pradyunsg/furo">Furo</a>
+            
+          </div>
+          <div class="right-details">
+            
+          </div>
+        </div>
+        
+      </footer>
+    </div>
+    <aside class="toc-drawer">
+      
+      
+      <div class="toc-sticky toc-scroll">
+        <div class="toc-title-container">
+          <span class="toc-title">
+            On this page
+          </span>
+        </div>
+        <div class="toc-tree-container">
+          <div class="toc-tree">
+            <ul>
+<li><a class="reference internal" href="#">FigureCarousel</a><ul>
+<li><a class="reference internal" href="#figurecarousel-py">FigureCarousel.py</a><ul>
+<li><a class="reference internal" href="#design-decisions">Design Decisions</a></li>
+<li><a class="reference internal" href="#memory-management">Memory Management</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#scripts.FigureCarousel.FigureCarousel"><code class="docutils literal notranslate"><span class="pre">FigureCarousel</span></code></a><ul>
+<li><a class="reference internal" href="#scripts.FigureCarousel.FigureCarousel.CAROUSEL_HEIGHT"><code class="docutils literal notranslate"><span class="pre">FigureCarousel.CAROUSEL_HEIGHT</span></code></a></li>
+<li><a class="reference internal" href="#scripts.FigureCarousel.FigureCarousel.__init__"><code class="docutils literal notranslate"><span class="pre">FigureCarousel.__init__()</span></code></a></li>
+<li><a class="reference internal" href="#scripts.FigureCarousel.FigureCarousel.add_figure"><code class="docutils literal notranslate"><span class="pre">FigureCarousel.add_figure()</span></code></a></li>
+<li><a class="reference internal" href="#scripts.FigureCarousel.FigureCarousel.add_pixmap"><code class="docutils literal notranslate"><span class="pre">FigureCarousel.add_pixmap()</span></code></a></li>
+<li><a class="reference internal" href="#scripts.FigureCarousel.FigureCarousel.clear"><code class="docutils literal notranslate"><span class="pre">FigureCarousel.clear()</span></code></a></li>
+<li><a class="reference internal" href="#scripts.FigureCarousel.FigureCarousel.figure_count"><code class="docutils literal notranslate"><span class="pre">FigureCarousel.figure_count()</span></code></a></li>
+<li><a class="reference internal" href="#scripts.FigureCarousel.FigureCarousel.figure_selected"><code class="docutils literal notranslate"><span class="pre">FigureCarousel.figure_selected</span></code></a></li>
+<li><a class="reference internal" href="#scripts.FigureCarousel.FigureCarousel.find_figure_index"><code class="docutils literal notranslate"><span class="pre">FigureCarousel.find_figure_index()</span></code></a></li>
+<li><a class="reference internal" href="#scripts.FigureCarousel.FigureCarousel.get_figure_data"><code class="docutils literal notranslate"><span class="pre">FigureCarousel.get_figure_data()</span></code></a></li>
+<li><a class="reference internal" href="#scripts.FigureCarousel.FigureCarousel.get_selected_figure_data"><code class="docutils literal notranslate"><span class="pre">FigureCarousel.get_selected_figure_data()</span></code></a></li>
+<li><a class="reference internal" href="#scripts.FigureCarousel.FigureCarousel.get_selected_index"><code class="docutils literal notranslate"><span class="pre">FigureCarousel.get_selected_index()</span></code></a></li>
+<li><a class="reference internal" href="#scripts.FigureCarousel.FigureCarousel.has_figure"><code class="docutils literal notranslate"><span class="pre">FigureCarousel.has_figure()</span></code></a></li>
+<li><a class="reference internal" href="#scripts.FigureCarousel.FigureCarousel.select_figure"><code class="docutils literal notranslate"><span class="pre">FigureCarousel.select_figure()</span></code></a></li>
+<li><a class="reference internal" href="#scripts.FigureCarousel.FigureCarousel.update_thumbnail"><code class="docutils literal notranslate"><span class="pre">FigureCarousel.update_thumbnail()</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#scripts.FigureCarousel.ThumbnailWidget"><code class="docutils literal notranslate"><span class="pre">ThumbnailWidget</span></code></a><ul>
+<li><a class="reference internal" href="#scripts.FigureCarousel.ThumbnailWidget.MAX_HEIGHT"><code class="docutils literal notranslate"><span class="pre">ThumbnailWidget.MAX_HEIGHT</span></code></a></li>
+<li><a class="reference internal" href="#scripts.FigureCarousel.ThumbnailWidget.MAX_WIDTH"><code class="docutils literal notranslate"><span class="pre">ThumbnailWidget.MAX_WIDTH</span></code></a></li>
+<li><a class="reference internal" href="#scripts.FigureCarousel.ThumbnailWidget.NORMAL_BORDER_WIDTH"><code class="docutils literal notranslate"><span class="pre">ThumbnailWidget.NORMAL_BORDER_WIDTH</span></code></a></li>
+<li><a class="reference internal" href="#scripts.FigureCarousel.ThumbnailWidget.SELECTED_BORDER_WIDTH"><code class="docutils literal notranslate"><span class="pre">ThumbnailWidget.SELECTED_BORDER_WIDTH</span></code></a></li>
+<li><a class="reference internal" href="#scripts.FigureCarousel.ThumbnailWidget.__init__"><code class="docutils literal notranslate"><span class="pre">ThumbnailWidget.__init__()</span></code></a></li>
+<li><a class="reference internal" href="#scripts.FigureCarousel.ThumbnailWidget.cleanup"><code class="docutils literal notranslate"><span class="pre">ThumbnailWidget.cleanup()</span></code></a></li>
+<li><a class="reference internal" href="#scripts.FigureCarousel.ThumbnailWidget.clicked"><code class="docutils literal notranslate"><span class="pre">ThumbnailWidget.clicked</span></code></a></li>
+<li><a class="reference internal" href="#scripts.FigureCarousel.ThumbnailWidget.index"><code class="docutils literal notranslate"><span class="pre">ThumbnailWidget.index</span></code></a></li>
+<li><a class="reference internal" href="#scripts.FigureCarousel.ThumbnailWidget.isSelected"><code class="docutils literal notranslate"><span class="pre">ThumbnailWidget.isSelected()</span></code></a></li>
+<li><a class="reference internal" href="#scripts.FigureCarousel.ThumbnailWidget.mousePressEvent"><code class="docutils literal notranslate"><span class="pre">ThumbnailWidget.mousePressEvent()</span></code></a></li>
+<li><a class="reference internal" href="#scripts.FigureCarousel.ThumbnailWidget.paintEvent"><code class="docutils literal notranslate"><span class="pre">ThumbnailWidget.paintEvent()</span></code></a></li>
+<li><a class="reference internal" href="#scripts.FigureCarousel.ThumbnailWidget.setSelected"><code class="docutils literal notranslate"><span class="pre">ThumbnailWidget.setSelected()</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+
+          </div>
+        </div>
+      </div>
+      
+      
+    </aside>
+  </div>
+</div><script src="../_static/documentation_options.js?v=3294030b"></script>
+    <script src="../_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="../_static/scripts/furo.js?v=46bd48cc"></script>
+    </body>
+</html>

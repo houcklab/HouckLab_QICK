@@ -1,0 +1,861 @@
+<!doctype html>
+<html class="no-js" lang="en" data-content_root="./">
+  <head><meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="index" title="Index" href="genindex.html"><link rel="search" title="Search" href="search.html">
+
+    <!-- Generated with Sphinx 9.1.0 and Furo 2025.12.19 -->
+        <title>Desq Basics - Desq 1.0.0 Beta documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=d111a655" />
+    <link rel="stylesheet" type="text/css" href="_static/styles/furo.css?v=7bdb33bb" />
+    <link rel="stylesheet" type="text/css" href="_static/styles/furo-extensions.css?v=8dab3a3b" />
+    
+    
+
+
+<style>
+  body {
+    --color-code-background: #f2f2f2;
+  --color-code-foreground: #1e1e1e;
+  
+  }
+  @media not print {
+    body[data-theme="dark"] {
+      --color-code-background: #202020;
+  --color-code-foreground: #d0d0d0;
+  
+    }
+    @media (prefers-color-scheme: dark) {
+      body:not([data-theme="light"]) {
+        --color-code-background: #202020;
+  --color-code-foreground: #d0d0d0;
+  
+      }
+    }
+  }
+</style></head>
+  <body>
+    
+    <script>
+      document.body.dataset.theme = localStorage.getItem("theme") || "auto";
+    </script>
+    
+
+<svg xmlns="http://www.w3.org/2000/svg" style="display: none;">
+  <symbol id="svg-toc" viewBox="0 0 24 24">
+    <title>Contents</title>
+    <svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 1024 1024">
+      <path d="M408 442h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8zm-8 204c0 4.4 3.6 8 8 8h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56zm504-486H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zm0 632H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zM115.4 518.9L271.7 642c5.8 4.6 14.4.5 14.4-6.9V388.9c0-7.4-8.5-11.5-14.4-6.9L115.4 505.1a8.74 8.74 0 0 0 0 13.8z"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-menu" viewBox="0 0 24 24">
+    <title>Menu</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-menu">
+      <line x1="3" y1="12" x2="21" y2="12"></line>
+      <line x1="3" y1="6" x2="21" y2="6"></line>
+      <line x1="3" y1="18" x2="21" y2="18"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-arrow-right" viewBox="0 0 24 24">
+    <title>Expand</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-chevron-right">
+      <polyline points="9 18 15 12 9 6"></polyline>
+    </svg>
+  </symbol>
+  <symbol id="svg-sun" viewBox="0 0 24 24">
+    <title>Light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="feather-sun">
+      <circle cx="12" cy="12" r="5"></circle>
+      <line x1="12" y1="1" x2="12" y2="3"></line>
+      <line x1="12" y1="21" x2="12" y2="23"></line>
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+      <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+      <line x1="1" y1="12" x2="3" y2="12"></line>
+      <line x1="21" y1="12" x2="23" y2="12"></line>
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+      <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon" viewBox="0 0 24 24">
+    <title>Dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-moon">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M12 3c.132 0 .263 0 .393 0a7.5 7.5 0 0 0 7.92 12.446a9 9 0 1 1 -8.313 -12.454z" />
+    </svg>
+  </symbol>
+  <symbol id="svg-sun-with-moon" viewBox="0 0 24 24">
+    <title>Auto light/dark, in light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path style="opacity: 50%" d="M 5.411 14.504 C 5.471 14.504 5.532 14.504 5.591 14.504 C 3.639 16.319 4.383 19.569 6.931 20.352 C 7.693 20.586 8.512 20.551 9.25 20.252 C 8.023 23.207 4.056 23.725 2.11 21.184 C 0.166 18.642 1.702 14.949 4.874 14.536 C 5.051 14.512 5.231 14.5 5.411 14.5 L 5.411 14.504 Z"/>
+      <line x1="14.5" y1="3.25" x2="14.5" y2="1.25"/>
+      <line x1="14.5" y1="15.85" x2="14.5" y2="17.85"/>
+      <line x1="10.044" y1="5.094" x2="8.63" y2="3.68"/>
+      <line x1="19" y1="14.05" x2="20.414" y2="15.464"/>
+      <line x1="8.2" y1="9.55" x2="6.2" y2="9.55"/>
+      <line x1="20.8" y1="9.55" x2="22.8" y2="9.55"/>
+      <line x1="10.044" y1="14.006" x2="8.63" y2="15.42"/>
+      <line x1="19" y1="5.05" x2="20.414" y2="3.636"/>
+      <circle cx="14.5" cy="9.55" r="3.6"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon-with-sun" viewBox="0 0 24 24">
+    <title>Auto light/dark, in dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path d="M 8.282 7.007 C 8.385 7.007 8.494 7.007 8.595 7.007 C 5.18 10.184 6.481 15.869 10.942 17.24 C 12.275 17.648 13.706 17.589 15 17.066 C 12.851 22.236 5.91 23.143 2.505 18.696 C -0.897 14.249 1.791 7.786 7.342 7.063 C 7.652 7.021 7.965 7 8.282 7 L 8.282 7.007 Z"/>
+      <line style="opacity: 50%" x1="18" y1="3.705" x2="18" y2="2.5"/>
+      <line style="opacity: 50%" x1="18" y1="11.295" x2="18" y2="12.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="4.816" x2="14.464" y2="3.964"/>
+      <line style="opacity: 50%" x1="20.711" y1="10.212" x2="21.563" y2="11.063"/>
+      <line style="opacity: 50%" x1="14.205" y1="7.5" x2="13.001" y2="7.5"/>
+      <line style="opacity: 50%" x1="21.795" y1="7.5" x2="23" y2="7.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="10.184" x2="14.464" y2="11.036"/>
+      <line style="opacity: 50%" x1="20.711" y1="4.789" x2="21.563" y2="3.937"/>
+      <circle style="opacity: 50%" cx="18" cy="7.5" r="2.169"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-pencil" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-pencil-code">
+      <path d="M4 20h4l10.5 -10.5a2.828 2.828 0 1 0 -4 -4l-10.5 10.5v4" />
+      <path d="M13.5 6.5l4 4" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+  <symbol id="svg-eye" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-eye-code">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M10 12a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" />
+      <path
+        d="M11.11 17.958c-3.209 -.307 -5.91 -2.293 -8.11 -5.958c2.4 -4 5.4 -6 9 -6c3.6 0 6.6 2 9 6c-.21 .352 -.427 .688 -.647 1.008" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+</svg>
+
+<input type="checkbox" class="sidebar-toggle" name="__navigation" id="__navigation" aria-label="Toggle site navigation sidebar">
+<input type="checkbox" class="sidebar-toggle" name="__toc" id="__toc" aria-label="Toggle table of contents sidebar">
+<label class="overlay sidebar-overlay" for="__navigation"></label>
+<label class="overlay toc-overlay" for="__toc"></label>
+
+<a class="skip-to-content muted-link" href="#furo-main-content">Skip to content</a>
+
+
+
+<div class="page">
+  <header class="mobile-header">
+    <div class="header-left">
+      <label class="nav-overlay-icon" for="__navigation">
+        <span class="icon"><svg><use href="#svg-menu"></use></svg></span>
+      </label>
+    </div>
+    <div class="header-center">
+      <a href="index.html"><div class="brand">Desq 1.0.0 Beta documentation</div></a>
+    </div>
+    <div class="header-right">
+      <div class="theme-toggle-container theme-toggle-header">
+        <button class="theme-toggle" aria-label="Toggle Light / Dark / Auto color theme">
+          <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+          <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+          <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+          <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+        </button>
+      </div>
+      <label class="toc-overlay-icon toc-header-icon" for="__toc">
+        <span class="icon"><svg><use href="#svg-toc"></use></svg></span>
+      </label>
+    </div>
+  </header>
+  <aside class="sidebar-drawer">
+    <div class="sidebar-container">
+      
+      <div class="sidebar-sticky"><a class="sidebar-brand" href="index.html">
+  
+  <span class="sidebar-brand-text">Desq 1.0.0 Beta documentation</span>
+  
+</a><form class="sidebar-search-container" method="get" action="search.html" role="search">
+  <input class="sidebar-search" placeholder="Search" name="q" aria-label="Search">
+  <input type="hidden" name="check_keywords" value="yes">
+  <input type="hidden" name="area" value="default">
+</form>
+<div id="searchbox"></div><div class="sidebar-scroll"><div class="sidebar-tree">
+  <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1 has-children"><a class="reference internal" href="desq_modules.html">Desq</a><input aria-label="Toggle navigation of Desq" class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" role="switch" type="checkbox"/><label for="toctree-checkbox-1"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="desq_modules/Desq.html">Desq</a></li>
+<li class="toctree-l2"><a class="reference internal" href="desq_modules/DesqTab.html">DesqTab</a></li>
+<li class="toctree-l2"><a class="reference internal" href="desq_modules/ExperimentThread.html">ExperimentThread</a></li>
+<li class="toctree-l2"><a class="reference internal" href="desq_modules/ExperimentObject.html">ExperimentObject</a></li>
+<li class="toctree-l2"><a class="reference internal" href="desq_modules/CustomMenuBar.html">CustomMenuBar</a></li>
+<li class="toctree-l2"><a class="reference internal" href="desq_modules/ConfigTreePanel.html">ConfigTreePanel</a></li>
+<li class="toctree-l2"><a class="reference internal" href="desq_modules/AccountsPanel.html">AccountsPanel</a></li>
+<li class="toctree-l2"><a class="reference internal" href="desq_modules/VoltagePanel.html">VoltagePanel</a></li>
+<li class="toctree-l2"><a class="reference internal" href="desq_modules/LogPanel.html">LogPanel</a></li>
+<li class="toctree-l2"><a class="reference internal" href="desq_modules/ConfigCodeEditor.html">ConfigCodeEditor</a></li>
+<li class="toctree-l2"><a class="reference internal" href="desq_modules/SettingsWindow.html">SettingsWindow</a></li>
+<li class="toctree-l2"><a class="reference internal" href="desq_modules/AuxiliaryThread.html">AuxiliaryThread</a></li>
+<li class="toctree-l2"><a class="reference internal" href="desq_modules/Helpers.html">Helpers</a></li>
+<li class="toctree-l2"><a class="reference internal" href="desq_modules/BackendDesq.html">BackendDesq</a></li>
+<li class="toctree-l2"><a class="reference internal" href="desq_modules/ConfigManager.html">ConfigManager</a></li>
+<li class="toctree-l2"><a class="reference internal" href="desq_modules/CheckboxDialogs.html">CheckboxDialogs</a></li>
+<li class="toctree-l2"><a class="reference internal" href="desq_modules/ExperimentLoader.html">ExperimentLoader</a></li>
+<li class="toctree-l2"><a class="reference internal" href="desq_modules/ImageViewTab.html">ImageViewTab</a></li>
+<li class="toctree-l2"><a class="reference internal" href="desq_modules/PlotSinkManager.html">PlotSinkManager</a></li>
+<li class="toctree-l2"><a class="reference internal" href="desq_modules/LoadDataWindow.html">LoadDataWindow</a></li>
+<li class="toctree-l2"><a class="reference internal" href="desq_modules/FigureCarousel.html">FigureCarousel</a></li>
+<li class="toctree-l2"><a class="reference internal" href="desq_modules/SmartFitter.html">SmartFitter</a></li>
+<li class="toctree-l2"><a class="reference internal" href="desq_modules/DirectoryTreePanel.html">DirectoryTreePanel</a></li>
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="experiment_hub.html">Experiment Hub</a><input aria-label="Toggle navigation of Experiment Hub" class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" role="switch" type="checkbox"/><label for="toctree-checkbox-2"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="experiment_hub/Experiment.html">Experiment</a></li>
+<li class="toctree-l2"><a class="reference internal" href="experiment_hub/MockExperiments.html">MockExperiments</a></li>
+<li class="toctree-l2"><a class="reference internal" href="experiment_hub/MockExperimentsAdv.html">MockExperimentsAdv</a></li>
+<li class="toctree-l2"><a class="reference internal" href="experiment_hub/MockConfigExtractor.html">MockConfigExtractor</a></li>
+</ul>
+</li>
+</ul>
+
+</div>
+</div>
+
+      </div>
+      
+    </div>
+  </aside>
+  <div class="main">
+    <div class="content">
+      <div class="article-container">
+        <a href="#" class="back-to-top muted-link">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+            <path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8v12z"></path>
+          </svg>
+          <span>Back to top</span>
+        </a>
+        <div class="content-icon-container">
+          <div class="view-this-page">
+  <a class="muted-link" href="_sources/desq_basics.rst.txt" title="View this page">
+    <svg><use href="#svg-eye"></use></svg>
+    <span class="visually-hidden">View this page</span>
+  </a>
+</div>
+<div class="theme-toggle-container theme-toggle-content">
+            <button class="theme-toggle" aria-label="Toggle Light / Dark / Auto color theme">
+              <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+              <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+              <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+              <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+            </button>
+          </div>
+          <label class="toc-overlay-icon toc-content-icon" for="__toc">
+            <span class="icon"><svg><use href="#svg-toc"></use></svg></span>
+          </label>
+        </div>
+        <article role="main" id="furo-main-content">
+          <section id="desq-basics">
+<h1>Desq Basics<a class="headerlink" href="#desq-basics" title="Link to this heading">¶</a></h1>
+<p id="id1">A comprehensive guide to Desq, including its main components, navigation, workflow, and backend architecture.</p>
+<section id="organizing-your-desq">
+<h2>Organizing Your Desq<a class="headerlink" href="#organizing-your-desq" title="Link to this heading">¶</a></h2>
+<p>Desq is a PyQt5-based research tool platform for managing superconducting qubit experiments on RFSoC hardware.
+The interface is organized into several key regions that work together to provide a complete experiment control environment.</p>
+<section id="main-window-layout">
+<h3>Main Window Layout<a class="headerlink" href="#main-window-layout" title="Link to this heading">¶</a></h3>
+<p>The Desq main window follows a hierarchical layout structure:</p>
+<img alt="_images/Desq_layout.png" src="_images/Desq_layout.png" />
+</section>
+<section id="custom-menu-bar">
+<h3>Custom Menu Bar<a class="headerlink" href="#custom-menu-bar" title="Link to this heading">¶</a></h3>
+<p>The top menu bar provides quick access to essential functions (from left to right):</p>
+<blockquote>
+<div><ul class="simple">
+<li><p><strong>Run</strong>: Start the currently selected experiment</p></li>
+<li><p><strong>Stop</strong>: Stop the running experiment (offers Safe Stop or Force Stop)</p></li>
+<li><p><strong>Progress Bar</strong>: Visual indicator of experiment progress</p></li>
+<li><p><strong>Load Exp</strong>: Open a Python experiment file (creates experiment tabs)</p></li>
+<li><p><strong>Load Data</strong>: Open an HDF5 dataset file for visualization</p></li>
+<li><p><strong>Documentation</strong>: Link to online documentation</p></li>
+<li><p><strong>Settings</strong>: Application preferences (theme, font size)</p></li>
+</ul>
+</div></blockquote>
+</section>
+<section id="central-tabs-container">
+<h3>Central Tabs Container<a class="headerlink" href="#central-tabs-container" title="Link to this heading">¶</a></h3>
+<p>The central area hosts experiment and data tabs. Each tab (<code class="xref py py-class docutils literal notranslate"><span class="pre">QDesqTab</span></code>) provides:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p><strong>Plot Utilities Bar</strong>: Buttons for RePlot, Snip (clipboard), Export, and Sync</p></li>
+<li><p><strong>Plot Settings</strong>: Matplotlib toggle, fitting options</p></li>
+<li><p><strong>Plot Area</strong>: Visualization space using PyQtGraph (default) or Matplotlib</p></li>
+<li><p><strong>Figure Carousel</strong>: Thumbnail navigation when multiple figures exist</p></li>
+<li><p><strong>Experiment Info Bar</strong>: Source file, estimated runtime, hardware requirements (Collapsible)</p></li>
+<li><p><strong>Experiment Config Panel</strong>: Experiment-specific configuration parameters</p></li>
+</ul>
+</div></blockquote>
+<img alt="_images/Desq_central_tabs_layout.png" src="_images/Desq_central_tabs_layout.png" />
+<p>For detailed implementation, see <code class="xref py py-mod docutils literal notranslate"><span class="pre">DesqTab</span></code>.</p>
+</section>
+<section id="configuration-panels">
+<h3>Configuration Panels<a class="headerlink" href="#configuration-panels" title="Link to this heading">¶</a></h3>
+<p>Desq uses two configuration panels:</p>
+<dl class="simple">
+<dt><strong>Global Config Panel</strong></dt><dd><p>Contains parameters shared across all experiments (e.g., qubit frequencies, readout settings). Located in the main splitter area.</p>
+</dd>
+<dt><strong>Experiment Config Panel</strong></dt><dd><p>Experiment-specific parameters that override or extend global config. Embedded within each <code class="xref py py-class docutils literal notranslate"><span class="pre">QDesqTab</span></code>.</p>
+</dd>
+<dt>Both panels support:</dt><dd><ul class="simple">
+<li><p>Can load in a .json config file, or in “build” mode, can combine multiple .json files.</p></li>
+<li><p>Tree view display of configuration hierarchy</p></li>
+<li><p>Inline editing of parameter values</p></li>
+<li><p>Directory browser for loading config files</p></li>
+</ul>
+</dd>
+</dl>
+<p>For implementation details, see <code class="xref py py-mod docutils literal notranslate"><span class="pre">ConfigTreePanel</span></code>.</p>
+</section>
+<section id="side-tabs-panel">
+<h3>Side Tabs Panel<a class="headerlink" href="#side-tabs-panel" title="Link to this heading">¶</a></h3>
+<p>The right-side panel contains three tabs:</p>
+<dl class="simple">
+<dt><strong>Voltage Tab</strong></dt><dd><p>Interface for controlling voltage sources (Yoko, Qblox). See <code class="xref py py-mod docutils literal notranslate"><span class="pre">VoltagePanel</span></code>.</p>
+</dd>
+<dt><strong>Accounts Tab</strong></dt><dd><p>RFSoC connection management with saved account profiles. Each account profile saves the workspace directory as well. See <code class="xref py py-mod docutils literal notranslate"><span class="pre">AccountsPanel</span></code>.</p>
+</dd>
+<dt><strong>Log Tab</strong></dt><dd><p>Real-time log output from Qt message handlers for debugging. See <code class="xref py py-mod docutils literal notranslate"><span class="pre">LogPanel</span></code>.</p>
+</dd>
+</dl>
+</section>
+<section id="directory-tree-panel">
+<h3>Directory Tree Panel<a class="headerlink" href="#directory-tree-panel" title="Link to this heading">¶</a></h3>
+<p>The left-side file browser enables quick experiemnt, data, or image tab creation:</p>
+<ul class="simple">
+<li><p>Python experiment files (<code class="docutils literal notranslate"><span class="pre">.py</span></code>)</p></li>
+<li><p>HDF5 dataset files (<code class="docutils literal notranslate"><span class="pre">.h5</span></code>)</p></li>
+<li><p>Image files for reference (<code class="docutils literal notranslate"><span class="pre">PNG,</span> <span class="pre">JPG,</span> <span class="pre">JPEG,</span> <span class="pre">GIF,</span> <span class="pre">BMP,</span> <span class="pre">SVG,</span> <span class="pre">WebP</span></code>)</p></li>
+</ul>
+<p>Double-clicking a file loads it into the appropriate context. See <code class="xref py py-mod docutils literal notranslate"><span class="pre">DirectoryTreePanel</span></code>.</p>
+</section>
+</section>
+<hr class="docutils" />
+<section id="running-an-experiment-workflow">
+<h2>Running an Experiment Workflow<a class="headerlink" href="#running-an-experiment-workflow" title="Link to this heading">¶</a></h2>
+<p>This section describes the complete workflow from RFSoC connection to data collection and storage.</p>
+<section id="step-1-connecting-to-an-rfsoc-account">
+<h3>Step 1: Connecting to an RFSoC Account<a class="headerlink" href="#step-1-connecting-to-an-rfsoc-account" title="Link to this heading">¶</a></h3>
+<p>Before running experiments, establish a connection to the RFSoC hardware:</p>
+<ol class="arabic simple">
+<li><p>Navigate to the <strong>Accounts</strong> tab in the side panel</p></li>
+<li><p>Select an existing account or create a new one:</p>
+<ul class="simple">
+<li><p><strong>Account Name</strong>: Descriptive identifier (e.g., “houcklab”)</p></li>
+<li><p><strong>IP Address</strong>: RFSoC network address (e.g., “192.168.1.100”)</p></li>
+<li><p><strong>Workspace</strong>: Directory path for experiment data/results storage (absolute path)</p></li>
+</ul>
+</li>
+<li><p>Click <strong>Connect</strong> to establish the Pyro4 proxy connection</p></li>
+<li><p>On successful connection:</p>
+<ul class="simple">
+<li><p>A checkmark appears next to the account name</p></li>
+<li><p>The <strong>Connect</strong> button changes to <strong>Disconnect</strong></p></li>
+<li><p>The <code class="docutils literal notranslate"><span class="pre">soc</span></code> and <code class="docutils literal notranslate"><span class="pre">soccfg</span></code> objects become available for experiments</p></li>
+</ul>
+</li>
+</ol>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># Account data is stored locally in JSON format:</span>
+<span class="c1"># LocalStorage/accounts/&lt;account_name&gt;.json</span>
+<span class="p">{</span>
+    <span class="s2">&quot;ip_address&quot;</span><span class="p">:</span> <span class="s2">&quot;192.168.1.100&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;account_name&quot;</span><span class="p">:</span> <span class="s2">&quot;houcklab&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;workspace&quot;</span><span class="p">:</span> <span class="s2">&quot;/path/to/workspace&quot;</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</section>
+<section id="step-2-setting-the-workspace-directory">
+<h3>Step 2: Setting the Workspace Directory<a class="headerlink" href="#step-2-setting-the-workspace-directory" title="Link to this heading">¶</a></h3>
+<p>The workspace defines where experimental data is saved:</p>
+<ul class="simple">
+<li><p>Set via the <strong>Workspace</strong> field in the Accounts panel</p></li>
+<li><p>Automatically updates when switching accounts</p></li>
+<li><p>Creates a <code class="docutils literal notranslate"><span class="pre">Data/</span></code> subdirectory for experiment outputs that automatically save config, dataset, and plot images.</p></li>
+</ul>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>The workspace path is also injected into experiments via the <code class="docutils literal notranslate"><span class="pre">outerFolder</span></code> attribute, enabling consistent file organization across experiment types.</p>
+</div>
+</section>
+<section id="step-3-loading-an-experiment">
+<h3>Step 3: Loading an Experiment<a class="headerlink" href="#step-3-loading-an-experiment" title="Link to this heading">¶</a></h3>
+<p>Load experiment files using either method:</p>
+<dl class="simple">
+<dt><strong>Method A: Menu Bar</strong></dt><dd><p>Click <strong>Load Exp</strong> and select a Python file containing experiment classes.</p>
+</dd>
+<dt><strong>Method B: Directory Tree</strong></dt><dd><p>Double-click a <code class="docutils literal notranslate"><span class="pre">.py</span></code> file in the Directory Tree panel.</p>
+</dd>
+</dl>
+<p>The loading process:</p>
+<ol class="arabic simple">
+<li><p><code class="xref py py-func docutils literal notranslate"><span class="pre">ExperimentLoader.load_module()</span></code> installs the custom matplotlib backend</p></li>
+<li><p>The module is imported with <code class="docutils literal notranslate"><span class="pre">socProxy</span></code> blocked (to prevent premature connections)</p></li>
+<li><p><code class="xref py py-func docutils literal notranslate"><span class="pre">ExperimentLoader.find_experiment_classes()</span></code> discovers all classes in a file inheriting from <code class="docutils literal notranslate"><span class="pre">ExperimentClass</span></code></p></li>
+<li><p>A new <code class="xref py py-class docutils literal notranslate"><span class="pre">QDesqTab</span></code> is created for each discovered experiment</p></li>
+<li><p>The tab extracts default configuration from the experiment’s <code class="docutils literal notranslate"><span class="pre">config_template</span></code> attribute</p></li>
+</ol>
+<div class="admonition seealso">
+<p class="admonition-title">See also</p>
+<p>Each experiments should follow the <code class="docutils literal notranslate"><span class="pre">ExperimentClass</span></code> template and override their own <code class="docutils literal notranslate"><span class="pre">.acquire()</span></code> and <code class="docutils literal notranslate"><span class="pre">.display()</span></code> functons. See the ExperimentHub.</p>
+</div>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># Example experiment file structure</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">MyExperiment</span><span class="p">(</span><span class="n">ExperimentClass</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">soc</span><span class="p">,</span> <span class="n">soccfg</span><span class="p">,</span> <span class="n">cfg</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">soc</span><span class="p">,</span> <span class="n">soccfg</span><span class="p">,</span> <span class="n">cfg</span><span class="p">)</span>
+        <span class="c1"># Experiment initialization</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">acquire</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="c1"># Data acquisition logic</span>
+        <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;data&quot;</span><span class="p">:</span> <span class="p">{</span><span class="o">...</span><span class="p">}}</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">display</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="n">plotDisp</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+        <span class="c1"># Custom plotting logic</span>
+        <span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">()</span>
+        <span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">data</span><span class="p">[</span><span class="s2">&quot;x&quot;</span><span class="p">],</span> <span class="n">data</span><span class="p">[</span><span class="s2">&quot;y&quot;</span><span class="p">])</span>
+</pre></div>
+</div>
+<p>For implementation details, see <code class="xref py py-mod docutils literal notranslate"><span class="pre">ExperimentLoader</span></code> and <code class="xref py py-mod docutils literal notranslate"><span class="pre">ExperimentObject</span></code>.</p>
+</section>
+<section id="step-4-building-configuration">
+<h3>Step 4: Building Configuration<a class="headerlink" href="#step-4-building-configuration" title="Link to this heading">¶</a></h3>
+<p>Configuration is assembled from the two sources:</p>
+<ol class="arabic simple">
+<li><p>Global Configuration
+Base parameters shared across experiments, loaded from JSON files or manually entered in the Global Config panel.</p></li>
+<li><p>Experiment Configuration
+Tab-specific overrides and additions, managed in each tab’s Experiment Config panel.</p></li>
+</ol>
+<dl class="simple">
+<dt><strong>Config Code Extraction</strong></dt><dd><p>The universal config editor (top section) allows pasting or loading Python code and extracts all dictionary variables to load into
+either the experiment-specifc of global config sections. Sometimes configs need to be made dynamically via <code class="docutils literal notranslate"><span class="pre">Runner</span></code> files and this
+allows for that to be utilized. see <code class="xref py py-mod docutils literal notranslate"><span class="pre">MockConfigExtractor`</span></code>.</p>
+</dd>
+</dl>
+<p>At experiment runtime, configurations are merged:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># In Desq.run_experiment():</span>
+<span class="n">experiment_format_config</span> <span class="o">=</span> <span class="p">{}</span>
+<span class="n">experiment_format_config</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">current_global_config</span><span class="p">)</span>
+<span class="n">experiment_format_config</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">current_experiment_config</span><span class="p">)</span>  <span class="c1"># Overrides duplicates</span>
+
+<span class="k">if</span> <span class="s2">&quot;sets&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">experiment_format_config</span><span class="p">:</span>
+    <span class="n">experiment_format_config</span><span class="p">[</span><span class="s2">&quot;sets&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="mi">1</span>
+</pre></div>
+</div>
+</section>
+<section id="step-5-connecting-voltage-interface-optional">
+<h3>Step 5: Connecting Voltage Interface (Optional)<a class="headerlink" href="#step-5-connecting-voltage-interface-optional" title="Link to this heading">¶</a></h3>
+<p>For experiments requiring voltage control:</p>
+<ol class="arabic simple">
+<li><p>Navigate to the <strong>Voltage</strong> tab</p></li>
+<li><p>Configure voltage channels for your hardware:</p>
+<ul class="simple">
+<li><p><strong>Yokogawa GS200</strong>: Precision DC voltage source</p></li>
+<li><p><strong>Qblox</strong>: Multi-channel fast flux control</p></li>
+</ul>
+</li>
+<li><p>Channels can be linked to config parameters for automatic updates</p></li>
+</ol>
+<p>The voltage interface provides:</p>
+<ul class="simple">
+<li><p>Real-time voltage readout</p></li>
+<li><p>Manual voltage adjustment</p></li>
+</ul>
+<p>See <code class="xref py py-mod docutils literal notranslate"><span class="pre">VoltagePanel</span></code>, <code class="xref py py-mod docutils literal notranslate"><span class="pre">VoltageInterface</span></code>, <code class="xref py py-mod docutils literal notranslate"><span class="pre">YOKOGS200</span></code>, and <code class="xref py py-mod docutils literal notranslate"><span class="pre">QBLOX</span></code> for implementation details.</p>
+</section>
+<section id="step-6-running-the-experiment">
+<h3>Step 6: Running the Experiment<a class="headerlink" href="#step-6-running-the-experiment" title="Link to this heading">¶</a></h3>
+<p>Execute the experiment by clicking <strong>Run</strong> (green arrow) in the menu bar:</p>
+<ol class="arabic simple">
+<li><p><strong>Validation</strong>: Checks RFSoC connection status (unless <code class="docutils literal notranslate"><span class="pre">TESTING=True</span></code>)</p></li>
+<li><p><strong>Session Setup</strong>: Calls <code class="docutils literal notranslate"><span class="pre">tab.start_plot_session()</span></code> to:</p>
+<ul class="simple">
+<li><p>Clear previous plots and carousel</p></li>
+<li><p>Generate a new <code class="docutils literal notranslate"><span class="pre">session_id</span></code> for figure isolation</p></li>
+<li><p>Snapshot the plot area size for consistent rendering</p></li>
+</ul>
+</li>
+<li><p><strong>Worker Creation</strong>: Creates <code class="xref py py-class docutils literal notranslate"><span class="pre">ExperimentThread</span></code> with:</p>
+<ul class="simple">
+<li><p>Merged configuration dictionary</p></li>
+<li><p>Reference to <code class="docutils literal notranslate"><span class="pre">soc</span></code> and <code class="docutils literal notranslate"><span class="pre">soccfg</span></code></p></li>
+<li><p>Plot sink manager for matplotlib interception</p></li>
+<li><p>Target tab and session ID</p></li>
+</ul>
+</li>
+<li><p><strong>Thread Execution</strong>: Moves worker to a QThread and starts the experiment loop</p></li>
+</ol>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># Simplified experiment execution flow</span>
+<span class="n">plot_session_id</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">current_tab</span><span class="o">.</span><span class="n">start_plot_session</span><span class="p">()</span>
+
+<span class="bp">self</span><span class="o">.</span><span class="n">experiment_worker</span> <span class="o">=</span> <span class="n">ExperimentThread</span><span class="p">(</span>
+    <span class="n">config</span><span class="o">=</span><span class="n">experiment_format_config</span><span class="p">,</span>
+    <span class="n">soccfg</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">soccfg</span><span class="p">,</span>
+    <span class="n">exp</span><span class="o">=</span><span class="n">experiment_instance</span><span class="p">,</span>
+    <span class="n">soc</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">soc</span><span class="p">,</span>
+    <span class="n">plot_sink_manager</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">plot_sink_manager</span><span class="p">,</span>
+    <span class="n">target_tab</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">current_tab</span><span class="p">,</span>
+    <span class="n">session_id</span><span class="o">=</span><span class="n">plot_session_id</span>
+<span class="p">)</span>
+
+<span class="bp">self</span><span class="o">.</span><span class="n">experiment_worker</span><span class="o">.</span><span class="n">moveToThread</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">thread</span><span class="p">)</span>
+<span class="bp">self</span><span class="o">.</span><span class="n">thread</span><span class="o">.</span><span class="n">started</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">experiment_worker</span><span class="o">.</span><span class="n">run</span><span class="p">)</span>
+<span class="bp">self</span><span class="o">.</span><span class="n">thread</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+</pre></div>
+</div>
+<p><strong>During Execution:</strong></p>
+<ul class="simple">
+<li><p>The experiment’s <code class="docutils literal notranslate"><span class="pre">.acquire()</span></code> method runs in the worker thread</p></li>
+<li><p>Matplotlib draw operations are intercepted by <code class="xref py py-class docutils literal notranslate"><span class="pre">BackendDesq</span></code></p></li>
+<li><p>Figures are routed to the correct tab via Qt signals</p></li>
+<li><p>Progress bar updates after each completed set</p></li>
+<li><p>Data is saved automatically after each set</p></li>
+</ul>
+<p><strong>Stopping the Experiment:</strong></p>
+<ul class="simple">
+<li><p><strong>Safe Stop</strong>: Completes current set, then stops (click Stop → Safe Stop)</p></li>
+<li><p><strong>Force Stop</strong>: Interrupts immediately using async exception injection (click Stop → Force Stop)</p></li>
+</ul>
+<p>See <code class="xref py py-mod docutils literal notranslate"><span class="pre">ExperimentThread</span></code> for threading implementation.</p>
+</section>
+<section id="step-7-what-gets-saved">
+<h3>Step 7: What Gets Saved<a class="headerlink" href="#step-7-what-gets-saved" title="Link to this heading">¶</a></h3>
+<p>After each experiment set, three files are saved to the workspace:</p>
+<p><strong>Directory Structure:</strong></p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>&lt;workspace&gt;/Data/
+└── &lt;ExperimentName&gt;/
+    └── &lt;ExperimentName&gt;_YYYY_MM_DD/
+        ├── &lt;ExperimentName&gt;_YYYY_MM_DD_HH_MM_SS.h5    # Data
+        ├── &lt;ExperimentName&gt;_YYYY_MM_DD_HH_MM_SS.json  # Config
+        └── &lt;ExperimentName&gt;_YYYY_MM_DD_HH_MM_SS.png   # Plot image
+
+ **HDF5 Data File (.h5)**
+
+ Contains experiment data in HDF5 format:
+
+ - Numeric arrays stored as datasets
+ - Dictionary metadata stored as JSON attributes
+ - Jagged arrays automatically padded with NaN
+
+ .. code-block:: python
+
+    # Data structure
+    {
+        &quot;data&quot;: {
+            &quot;x_data&quot;: np.array([...]),
+            &quot;y_data&quot;: np.array([...]),
+            &quot;set_num&quot;: 0,
+            # Additional experiment outputs
+        }
+    }
+
+ **JSON Config File (.json)**
+
+ Complete configuration snapshot:
+
+ .. code-block:: json
+
+    {
+        &quot;Base Config&quot;: {
+            &quot;qubit_freq&quot;: 5.0e9,
+            &quot;readout_length&quot;: 1000
+        },
+        &quot;Experiment Config&quot;: {
+            &quot;sweep_start&quot;: 0,
+            &quot;sweep_stop&quot;: 100,
+            &quot;num_points&quot;: 101
+        }
+    }
+
+ **PNG Plot Image (.png)**
+</pre></div>
+</div>
+<p>Screenshot of the current plot visualization, captured from either the PyQtGraph or Matplotlib widget depending on the active rendering mode.</p>
+<p>For custom export logic, experiments can define an <code class="docutils literal notranslate"><span class="pre">exporter</span></code> method. Otherwise, <code class="xref py py-meth docutils literal notranslate"><span class="pre">QDesqTab.backup_exporter()</span></code> handles generic data serialization.</p>
+</section>
+</section>
+</section>
+<hr class="docutils" />
+<section id="backend-architecture-plot-interception">
+<h1>Backend Architecture: Plot Interception<a class="headerlink" href="#backend-architecture-plot-interception" title="Link to this heading">¶</a></h1>
+<p>Desq uses a sophisticated matplotlib backend interception system to capture and route plots from experiment code to the GUI. This section explains the architecture and how it works.</p>
+<p>Standard matplotlib usage (<code class="docutils literal notranslate"><span class="pre">plt.show()</span></code>) creates OS-level windows that:</p>
+<ul class="simple">
+<li><p>Block the GUI event loop</p></li>
+<li><p>Cannot be integrated into Qt widget layouts</p></li>
+<li><p>Don’t support live updating during experiments</p></li>
+<li><p>Cause threading issues when called from worker threads</p></li>
+</ul>
+<p>Previous approaches like monkey-patching <code class="docutils literal notranslate"><span class="pre">plt.show()</span></code> were brittle and missed many code paths.</p>
+<p>Desq implements a custom matplotlib backend (<code class="xref py py-mod docutils literal notranslate"><span class="pre">BackendDesq</span></code>) that intercepts ALL rendering operations at the canvas level:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>┌─────────────────────────────────────────────────────────────────────────┐
+│                     Matplotlib Rendering Pipeline                       │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│   plt.show()   ─┐                                                       │
+│                 │                                                       │
+│   fig.savefig()─┼──▶  FigureCanvas.draw()  ──▶  FigureCanvasDesq        │
+│                 │                              (Custom Backend)         │
+│   animation    ─┤                                    │                  │
+│                 │                                    ▼                  │
+│   GUI paint    ─┘                           Notify Plot Sink            │
+│                                                    │                    │
+│                                                    ▼                    │
+│                                            PlotSinkManager              │
+│                                            (Qt Signal Emission)         │
+│                                                    │                    │
+│                                                    ▼                    │
+│                                            QDesqTab.receive_figure()    │
+│                                            (GUI Thread Handler)         │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+</pre></div>
+</div>
+<p>The <code class="xref py py-mod docutils literal notranslate"><span class="pre">BackendDesq</span></code> module provides a custom matplotlib backend:</p>
+<p><strong>Key Components:</strong></p>
+<dl class="simple">
+<dt><code class="xref py py-class docutils literal notranslate"><span class="pre">FigureCanvasDesq</span></code></dt><dd><p>Extends <code class="docutils literal notranslate"><span class="pre">FigureCanvasAgg</span></code> and overrides <code class="docutils literal notranslate"><span class="pre">draw()</span></code> and <code class="docutils literal notranslate"><span class="pre">draw_idle()</span></code> to notify the thread-local plot sink.</p>
+</dd>
+<dt><code class="xref py py-class docutils literal notranslate"><span class="pre">FigureManagerDesq</span></code></dt><dd><p>Minimal manager that prevents OS window creation.</p>
+</dd>
+<dt><code class="xref py py-func docutils literal notranslate"><span class="pre">set_plot_sink()</span></code></dt><dd><p>Sets the sink callback for the current thread. Each experiment thread has its own sink.</p>
+</dd>
+<dt><code class="xref py py-func docutils literal notranslate"><span class="pre">clear_plot_sink()</span></code></dt><dd><p>Removes the sink after experiment completion.</p>
+</dd>
+</dl>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># Backend installation (in Desq.py, before any matplotlib imports)</span>
+<span class="n">BACKEND_MODULE</span> <span class="o">=</span> <span class="s1">&#39;module://MasterProject.Client_modules.Desq_GUI.scripts.BackendDesq&#39;</span>
+<span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">&quot;MPLBACKEND&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">BACKEND_MODULE</span>
+<span class="n">matplotlib</span><span class="o">.</span><span class="n">use</span><span class="p">(</span><span class="n">BACKEND_MODULE</span><span class="p">,</span> <span class="n">force</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+</pre></div>
+</div>
+<p><strong>Thread-Local Storage:</strong></p>
+<p>Each thread maintains its own plot sink, enabling concurrent experiments without figure mixing:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">_thread_local</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">local</span><span class="p">()</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">set_plot_sink</span><span class="p">(</span><span class="n">sink</span><span class="p">):</span>
+    <span class="n">_thread_local</span><span class="o">.</span><span class="n">plot_sink</span> <span class="o">=</span> <span class="n">sink</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">get_plot_sink</span><span class="p">():</span>
+    <span class="k">return</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">_thread_local</span><span class="p">,</span> <span class="s1">&#39;plot_sink&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>The <code class="xref py py-class docutils literal notranslate"><span class="pre">PlotSinkManager</span></code> coordinates between worker threads and the GUI:</p>
+<p><strong>Responsibilities:</strong></p>
+<ol class="arabic simple">
+<li><p>Create thread-specific sinks with session IDs</p></li>
+<li><p>Emit Qt signals when figures are drawn</p></li>
+<li><p>Route figures to the correct <code class="xref py py-class docutils literal notranslate"><span class="pre">QDesqTab</span></code></p></li>
+<li><p>Handle debouncing for rapid updates</p></li>
+</ol>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">class</span><span class="w"> </span><span class="nc">PlotSinkManager</span><span class="p">(</span><span class="n">QObject</span><span class="p">):</span>
+    <span class="n">figureReceived</span> <span class="o">=</span> <span class="n">pyqtSignal</span><span class="p">(</span><span class="nb">object</span><span class="p">,</span> <span class="nb">object</span><span class="p">,</span> <span class="nb">str</span><span class="p">,</span> <span class="nb">int</span><span class="p">)</span>
+    <span class="c1"># Args: (figure, target_tab, event_type, session_id)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">create_sink_for_tab</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">tab</span><span class="p">,</span> <span class="n">session_id</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Create a sink that routes figures to a specific tab.&quot;&quot;&quot;</span>
+        <span class="k">def</span><span class="w"> </span><span class="nf">sink</span><span class="p">(</span><span class="n">figure</span><span class="p">,</span> <span class="n">event_type</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">event_type</span> <span class="o">==</span> <span class="s1">&#39;draw&#39;</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">figureReceived</span><span class="o">.</span><span class="n">emit</span><span class="p">(</span><span class="n">figure</span><span class="p">,</span> <span class="n">tab</span><span class="p">,</span> <span class="n">event_type</span><span class="p">,</span> <span class="n">session_id</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">sink</span>
+</pre></div>
+</div>
+<p><strong>Context Manager Usage:</strong></p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># In ExperimentThread.run()</span>
+<span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">plot_sink_manager</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">target_tab</span><span class="p">:</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">plot_sink_manager</span><span class="o">.</span><span class="n">setup_sink_for_thread</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">target_tab</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">session_id</span><span class="p">)</span>
+
+<span class="k">try</span><span class="p">:</span>
+    <span class="c1"># Run experiment - all matplotlib draws are captured</span>
+    <span class="n">data</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">experiment_instance</span><span class="o">.</span><span class="n">acquire</span><span class="p">()</span>
+<span class="k">finally</span><span class="p">:</span>
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">plot_sink_manager</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">plot_sink_manager</span><span class="o">.</span><span class="n">cleanup_sink_for_thread</span><span class="p">()</span>
+</pre></div>
+</div>
+<p>Session IDs prevent cross-contamination between experiment runs:</p>
+<ol class="arabic simple">
+<li><p>Each run/replot generates a new <code class="docutils literal notranslate"><span class="pre">session_id</span></code> via <code class="docutils literal notranslate"><span class="pre">tab.start_plot_session()</span></code></p></li>
+<li><p>The sink tags all captured figures with this session ID</p></li>
+<li><p>The receiving tab validates the session ID and rejects stale figures</p></li>
+</ol>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">start_plot_session</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Start a new plot session with isolation.&quot;&quot;&quot;</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_plot_session_id</span> <span class="o">+=</span> <span class="mi">1</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">clear_plots</span><span class="p">()</span>  <span class="c1"># Clear carousel and widgets</span>
+    <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_plot_session_id</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">receive_figure</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">figure</span><span class="p">,</span> <span class="n">event_type</span><span class="p">,</span> <span class="n">session_id</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Receive figure with session validation.&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">session_id</span> <span class="o">!=</span> <span class="o">-</span><span class="mi">1</span> <span class="ow">and</span> <span class="n">session_id</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_plot_session_id</span><span class="p">:</span>
+        <span class="c1"># Reject figure from old session</span>
+        <span class="k">return</span>
+    <span class="c1"># Process figure...</span>
+</pre></div>
+</div>
+<p>When the “Matplotlib” checkbox is unchecked, figures are converted to PyQtGraph:</p>
+<p><strong>Conversion Process:</strong></p>
+<ol class="arabic simple">
+<li><p>Parse matplotlib figure structure (axes, lines, images, scatter plots)</p></li>
+<li><p>Create corresponding PyQtGraph widgets</p></li>
+<li><p>Map matplotlib colors, styles, and layouts to PyQtGraph equivalents</p></li>
+<li><p>Support live updates by updating data on existing widgets</p></li>
+</ol>
+<p><strong>Stacked Widget Architecture:</strong></p>
+<p>Each tab maintains dual rendering stacks:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># Mode switching is instant - just change stack index</span>
+<span class="bp">self</span><span class="o">.</span><span class="n">plot_stack</span> <span class="o">=</span> <span class="n">QStackedWidget</span><span class="p">()</span>
+<span class="bp">self</span><span class="o">.</span><span class="n">plot_stack</span><span class="o">.</span><span class="n">addWidget</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">pyqtgraph_stack</span><span class="p">)</span>   <span class="c1"># Index 0</span>
+<span class="bp">self</span><span class="o">.</span><span class="n">plot_stack</span><span class="o">.</span><span class="n">addWidget</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">matplotlib_stack</span><span class="p">)</span>  <span class="c1"># Index 1</span>
+
+<span class="c1"># Each sub-stack contains:</span>
+<span class="c1"># Index 0: Default placeholder (&quot;Nothing to plot&quot;)</span>
+<span class="c1"># Index 1+: One widget per figure from carousel</span>
+</pre></div>
+</div>
+<p><strong>Live Update Support:</strong></p>
+<p>The system tracks plot signatures to enable in-place updates:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">_compute_pyqtgraph_signature</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">figures</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Compute structure signature (not data values).&quot;&quot;&quot;</span>
+    <span class="n">sig_parts</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">fig</span> <span class="ow">in</span> <span class="n">figures</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">ax</span> <span class="ow">in</span> <span class="n">fig</span><span class="o">.</span><span class="n">get_axes</span><span class="p">():</span>
+            <span class="n">pos</span> <span class="o">=</span> <span class="n">ax</span><span class="o">.</span><span class="n">get_position</span><span class="p">()</span>
+            <span class="n">ax_sig</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="nb">round</span><span class="p">(</span><span class="n">pos</span><span class="o">.</span><span class="n">x0</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span> <span class="nb">round</span><span class="p">(</span><span class="n">pos</span><span class="o">.</span><span class="n">y0</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>
+                <span class="nb">len</span><span class="p">(</span><span class="n">ax</span><span class="o">.</span><span class="n">get_lines</span><span class="p">())</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">,</span>
+                <span class="nb">len</span><span class="p">(</span><span class="n">ax</span><span class="o">.</span><span class="n">get_images</span><span class="p">())</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">sig_parts</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">ax_sig</span><span class="p">)</span>
+    <span class="k">return</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">sig_parts</span><span class="p">)</span>
+
+<span class="c1"># If signature matches, update data in place</span>
+<span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pyqtgraph_signature</span> <span class="o">==</span> <span class="n">new_sig</span><span class="p">:</span>
+    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">fig</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">figures</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_update_pyqtgraph_plot_data</span><span class="p">(</span><span class="n">plot</span><span class="p">,</span> <span class="n">axes</span><span class="p">[</span><span class="n">ax_idx</span><span class="p">])</span>
+</pre></div>
+</div>
+<p>When experiments generate multiple figures, the <code class="xref py py-class docutils literal notranslate"><span class="pre">FigureCarousel</span></code> provides navigation:</p>
+<p><strong>Features:</strong></p>
+<ul class="simple">
+<li><p>Horizontal scrollable thumbnail strip</p></li>
+<li><p>Click to switch displayed figure (instant, no re-rendering)</p></li>
+<li><p>Auto-hide when only one figure exists</p></li>
+<li><p>Proper memory management for pixmap cleanup</p></li>
+</ul>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># Adding a figure to carousel</span>
+<span class="n">carousel</span><span class="o">.</span><span class="n">add_figure</span><span class="p">(</span><span class="n">matplotlib_figure</span><span class="p">,</span> <span class="n">make_active</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+<span class="c1"># Switching display (just changes stack index)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_on_carousel_figure_selected</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">index</span><span class="p">):</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_displayed_figure_index</span> <span class="o">=</span> <span class="n">index</span>
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">use_matplotlib_checkbox</span><span class="o">.</span><span class="n">isChecked</span><span class="p">():</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">matplotlib_stack</span><span class="o">.</span><span class="n">setCurrentIndex</span><span class="p">(</span><span class="n">index</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">pyqtgraph_stack</span><span class="o">.</span><span class="n">setCurrentIndex</span><span class="p">(</span><span class="n">index</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>See <code class="xref py py-mod docutils literal notranslate"><span class="pre">FigureCarousel</span></code> for implementation details.</p>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p><strong>Critical Threading Rules:</strong></p>
+<ol class="arabic simple">
+<li><p>Never use <code class="docutils literal notranslate"><span class="pre">qDebug()</span></code>, <code class="docutils literal notranslate"><span class="pre">qInfo()</span></code>, <code class="docutils literal notranslate"><span class="pre">qWarning()</span></code> from worker threads - they update a QTextEdit which is not thread-safe. Use <code class="docutils literal notranslate"><span class="pre">print()</span></code> instead.</p></li>
+<li><p>Never touch Qt widgets directly from worker threads - always use Qt signals with <code class="docutils literal notranslate"><span class="pre">QueuedConnection</span></code>.</p></li>
+<li><p>Figure objects are passed by reference - use session-based isolation rather than copying (Qt canvases cannot be pickled).</p></li>
+</ol>
+</div>
+</section>
+
+        </article>
+      </div>
+      <footer>
+        
+        <div class="related-pages">
+          
+          
+        </div>
+        <div class="bottom-of-page">
+          <div class="left-details">
+            <div class="copyright">
+                Copyright &#169; 2025, Lev, Jake, Matt, Sonny
+            </div>
+            Made with <a href="https://www.sphinx-doc.org/">Sphinx</a> and <a class="muted-link" href="https://pradyunsg.me">@pradyunsg</a>'s
+            
+            <a href="https://github.com/pradyunsg/furo">Furo</a>
+            
+          </div>
+          <div class="right-details">
+            
+          </div>
+        </div>
+        
+      </footer>
+    </div>
+    <aside class="toc-drawer">
+      
+      
+      <div class="toc-sticky toc-scroll">
+        <div class="toc-title-container">
+          <span class="toc-title">
+            On this page
+          </span>
+        </div>
+        <div class="toc-tree-container">
+          <div class="toc-tree">
+            <ul>
+<li><a class="reference internal" href="#">Desq Basics</a><ul>
+<li><a class="reference internal" href="#organizing-your-desq">Organizing Your Desq</a><ul>
+<li><a class="reference internal" href="#main-window-layout">Main Window Layout</a></li>
+<li><a class="reference internal" href="#custom-menu-bar">Custom Menu Bar</a></li>
+<li><a class="reference internal" href="#central-tabs-container">Central Tabs Container</a></li>
+<li><a class="reference internal" href="#configuration-panels">Configuration Panels</a></li>
+<li><a class="reference internal" href="#side-tabs-panel">Side Tabs Panel</a></li>
+<li><a class="reference internal" href="#directory-tree-panel">Directory Tree Panel</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#running-an-experiment-workflow">Running an Experiment Workflow</a><ul>
+<li><a class="reference internal" href="#step-1-connecting-to-an-rfsoc-account">Step 1: Connecting to an RFSoC Account</a></li>
+<li><a class="reference internal" href="#step-2-setting-the-workspace-directory">Step 2: Setting the Workspace Directory</a></li>
+<li><a class="reference internal" href="#step-3-loading-an-experiment">Step 3: Loading an Experiment</a></li>
+<li><a class="reference internal" href="#step-4-building-configuration">Step 4: Building Configuration</a></li>
+<li><a class="reference internal" href="#step-5-connecting-voltage-interface-optional">Step 5: Connecting Voltage Interface (Optional)</a></li>
+<li><a class="reference internal" href="#step-6-running-the-experiment">Step 6: Running the Experiment</a></li>
+<li><a class="reference internal" href="#step-7-what-gets-saved">Step 7: What Gets Saved</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li><a class="reference internal" href="#backend-architecture-plot-interception">Backend Architecture: Plot Interception</a></li>
+</ul>
+
+          </div>
+        </div>
+      </div>
+      
+      
+    </aside>
+  </div>
+</div><script src="_static/documentation_options.js?v=3294030b"></script>
+    <script src="_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="_static/scripts/furo.js?v=46bd48cc"></script>
+    </body>
+</html>

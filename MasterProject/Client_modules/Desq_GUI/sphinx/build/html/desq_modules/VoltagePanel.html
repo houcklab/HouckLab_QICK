@@ -1,0 +1,725 @@
+<!doctype html>
+<html class="no-js" lang="en" data-content_root="../">
+  <head><meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="index" title="Index" href="../genindex.html"><link rel="search" title="Search" href="../search.html"><link rel="next" title="LogPanel" href="LogPanel.html"><link rel="prev" title="AccountsPanel" href="AccountsPanel.html">
+
+    <!-- Generated with Sphinx 9.1.0 and Furo 2025.12.19 -->
+        <title>VoltagePanel - Desq 1.0.0 Beta documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=d111a655" />
+    <link rel="stylesheet" type="text/css" href="../_static/styles/furo.css?v=7bdb33bb" />
+    <link rel="stylesheet" type="text/css" href="../_static/styles/furo-extensions.css?v=8dab3a3b" />
+    
+    
+
+
+<style>
+  body {
+    --color-code-background: #f2f2f2;
+  --color-code-foreground: #1e1e1e;
+  
+  }
+  @media not print {
+    body[data-theme="dark"] {
+      --color-code-background: #202020;
+  --color-code-foreground: #d0d0d0;
+  
+    }
+    @media (prefers-color-scheme: dark) {
+      body:not([data-theme="light"]) {
+        --color-code-background: #202020;
+  --color-code-foreground: #d0d0d0;
+  
+      }
+    }
+  }
+</style></head>
+  <body>
+    
+    <script>
+      document.body.dataset.theme = localStorage.getItem("theme") || "auto";
+    </script>
+    
+
+<svg xmlns="http://www.w3.org/2000/svg" style="display: none;">
+  <symbol id="svg-toc" viewBox="0 0 24 24">
+    <title>Contents</title>
+    <svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 1024 1024">
+      <path d="M408 442h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8zm-8 204c0 4.4 3.6 8 8 8h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56zm504-486H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zm0 632H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zM115.4 518.9L271.7 642c5.8 4.6 14.4.5 14.4-6.9V388.9c0-7.4-8.5-11.5-14.4-6.9L115.4 505.1a8.74 8.74 0 0 0 0 13.8z"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-menu" viewBox="0 0 24 24">
+    <title>Menu</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-menu">
+      <line x1="3" y1="12" x2="21" y2="12"></line>
+      <line x1="3" y1="6" x2="21" y2="6"></line>
+      <line x1="3" y1="18" x2="21" y2="18"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-arrow-right" viewBox="0 0 24 24">
+    <title>Expand</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-chevron-right">
+      <polyline points="9 18 15 12 9 6"></polyline>
+    </svg>
+  </symbol>
+  <symbol id="svg-sun" viewBox="0 0 24 24">
+    <title>Light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="feather-sun">
+      <circle cx="12" cy="12" r="5"></circle>
+      <line x1="12" y1="1" x2="12" y2="3"></line>
+      <line x1="12" y1="21" x2="12" y2="23"></line>
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+      <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+      <line x1="1" y1="12" x2="3" y2="12"></line>
+      <line x1="21" y1="12" x2="23" y2="12"></line>
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+      <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon" viewBox="0 0 24 24">
+    <title>Dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-moon">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M12 3c.132 0 .263 0 .393 0a7.5 7.5 0 0 0 7.92 12.446a9 9 0 1 1 -8.313 -12.454z" />
+    </svg>
+  </symbol>
+  <symbol id="svg-sun-with-moon" viewBox="0 0 24 24">
+    <title>Auto light/dark, in light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path style="opacity: 50%" d="M 5.411 14.504 C 5.471 14.504 5.532 14.504 5.591 14.504 C 3.639 16.319 4.383 19.569 6.931 20.352 C 7.693 20.586 8.512 20.551 9.25 20.252 C 8.023 23.207 4.056 23.725 2.11 21.184 C 0.166 18.642 1.702 14.949 4.874 14.536 C 5.051 14.512 5.231 14.5 5.411 14.5 L 5.411 14.504 Z"/>
+      <line x1="14.5" y1="3.25" x2="14.5" y2="1.25"/>
+      <line x1="14.5" y1="15.85" x2="14.5" y2="17.85"/>
+      <line x1="10.044" y1="5.094" x2="8.63" y2="3.68"/>
+      <line x1="19" y1="14.05" x2="20.414" y2="15.464"/>
+      <line x1="8.2" y1="9.55" x2="6.2" y2="9.55"/>
+      <line x1="20.8" y1="9.55" x2="22.8" y2="9.55"/>
+      <line x1="10.044" y1="14.006" x2="8.63" y2="15.42"/>
+      <line x1="19" y1="5.05" x2="20.414" y2="3.636"/>
+      <circle cx="14.5" cy="9.55" r="3.6"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon-with-sun" viewBox="0 0 24 24">
+    <title>Auto light/dark, in dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path d="M 8.282 7.007 C 8.385 7.007 8.494 7.007 8.595 7.007 C 5.18 10.184 6.481 15.869 10.942 17.24 C 12.275 17.648 13.706 17.589 15 17.066 C 12.851 22.236 5.91 23.143 2.505 18.696 C -0.897 14.249 1.791 7.786 7.342 7.063 C 7.652 7.021 7.965 7 8.282 7 L 8.282 7.007 Z"/>
+      <line style="opacity: 50%" x1="18" y1="3.705" x2="18" y2="2.5"/>
+      <line style="opacity: 50%" x1="18" y1="11.295" x2="18" y2="12.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="4.816" x2="14.464" y2="3.964"/>
+      <line style="opacity: 50%" x1="20.711" y1="10.212" x2="21.563" y2="11.063"/>
+      <line style="opacity: 50%" x1="14.205" y1="7.5" x2="13.001" y2="7.5"/>
+      <line style="opacity: 50%" x1="21.795" y1="7.5" x2="23" y2="7.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="10.184" x2="14.464" y2="11.036"/>
+      <line style="opacity: 50%" x1="20.711" y1="4.789" x2="21.563" y2="3.937"/>
+      <circle style="opacity: 50%" cx="18" cy="7.5" r="2.169"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-pencil" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-pencil-code">
+      <path d="M4 20h4l10.5 -10.5a2.828 2.828 0 1 0 -4 -4l-10.5 10.5v4" />
+      <path d="M13.5 6.5l4 4" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+  <symbol id="svg-eye" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-eye-code">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M10 12a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" />
+      <path
+        d="M11.11 17.958c-3.209 -.307 -5.91 -2.293 -8.11 -5.958c2.4 -4 5.4 -6 9 -6c3.6 0 6.6 2 9 6c-.21 .352 -.427 .688 -.647 1.008" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+</svg>
+
+<input type="checkbox" class="sidebar-toggle" name="__navigation" id="__navigation" aria-label="Toggle site navigation sidebar">
+<input type="checkbox" class="sidebar-toggle" name="__toc" id="__toc" aria-label="Toggle table of contents sidebar">
+<label class="overlay sidebar-overlay" for="__navigation"></label>
+<label class="overlay toc-overlay" for="__toc"></label>
+
+<a class="skip-to-content muted-link" href="#furo-main-content">Skip to content</a>
+
+
+
+<div class="page">
+  <header class="mobile-header">
+    <div class="header-left">
+      <label class="nav-overlay-icon" for="__navigation">
+        <span class="icon"><svg><use href="#svg-menu"></use></svg></span>
+      </label>
+    </div>
+    <div class="header-center">
+      <a href="../index.html"><div class="brand">Desq 1.0.0 Beta documentation</div></a>
+    </div>
+    <div class="header-right">
+      <div class="theme-toggle-container theme-toggle-header">
+        <button class="theme-toggle" aria-label="Toggle Light / Dark / Auto color theme">
+          <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+          <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+          <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+          <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+        </button>
+      </div>
+      <label class="toc-overlay-icon toc-header-icon" for="__toc">
+        <span class="icon"><svg><use href="#svg-toc"></use></svg></span>
+      </label>
+    </div>
+  </header>
+  <aside class="sidebar-drawer">
+    <div class="sidebar-container">
+      
+      <div class="sidebar-sticky"><a class="sidebar-brand" href="../index.html">
+  
+  <span class="sidebar-brand-text">Desq 1.0.0 Beta documentation</span>
+  
+</a><form class="sidebar-search-container" method="get" action="../search.html" role="search">
+  <input class="sidebar-search" placeholder="Search" name="q" aria-label="Search">
+  <input type="hidden" name="check_keywords" value="yes">
+  <input type="hidden" name="area" value="default">
+</form>
+<div id="searchbox"></div><div class="sidebar-scroll"><div class="sidebar-tree">
+  <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1 current has-children"><a class="reference internal" href="../desq_modules.html">Desq</a><input aria-label="Toggle navigation of Desq" checked="" class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" role="switch" type="checkbox"/><label for="toctree-checkbox-1"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="Desq.html">Desq</a></li>
+<li class="toctree-l2"><a class="reference internal" href="DesqTab.html">DesqTab</a></li>
+<li class="toctree-l2"><a class="reference internal" href="ExperimentThread.html">ExperimentThread</a></li>
+<li class="toctree-l2"><a class="reference internal" href="ExperimentObject.html">ExperimentObject</a></li>
+<li class="toctree-l2"><a class="reference internal" href="CustomMenuBar.html">CustomMenuBar</a></li>
+<li class="toctree-l2"><a class="reference internal" href="ConfigTreePanel.html">ConfigTreePanel</a></li>
+<li class="toctree-l2"><a class="reference internal" href="AccountsPanel.html">AccountsPanel</a></li>
+<li class="toctree-l2 current current-page"><a class="current reference internal" href="#">VoltagePanel</a></li>
+<li class="toctree-l2"><a class="reference internal" href="LogPanel.html">LogPanel</a></li>
+<li class="toctree-l2"><a class="reference internal" href="ConfigCodeEditor.html">ConfigCodeEditor</a></li>
+<li class="toctree-l2"><a class="reference internal" href="SettingsWindow.html">SettingsWindow</a></li>
+<li class="toctree-l2"><a class="reference internal" href="AuxiliaryThread.html">AuxiliaryThread</a></li>
+<li class="toctree-l2"><a class="reference internal" href="Helpers.html">Helpers</a></li>
+<li class="toctree-l2"><a class="reference internal" href="BackendDesq.html">BackendDesq</a></li>
+<li class="toctree-l2"><a class="reference internal" href="ConfigManager.html">ConfigManager</a></li>
+<li class="toctree-l2"><a class="reference internal" href="CheckboxDialogs.html">CheckboxDialogs</a></li>
+<li class="toctree-l2"><a class="reference internal" href="ExperimentLoader.html">ExperimentLoader</a></li>
+<li class="toctree-l2"><a class="reference internal" href="ImageViewTab.html">ImageViewTab</a></li>
+<li class="toctree-l2"><a class="reference internal" href="PlotSinkManager.html">PlotSinkManager</a></li>
+<li class="toctree-l2"><a class="reference internal" href="LoadDataWindow.html">LoadDataWindow</a></li>
+<li class="toctree-l2"><a class="reference internal" href="FigureCarousel.html">FigureCarousel</a></li>
+<li class="toctree-l2"><a class="reference internal" href="SmartFitter.html">SmartFitter</a></li>
+<li class="toctree-l2"><a class="reference internal" href="DirectoryTreePanel.html">DirectoryTreePanel</a></li>
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../experiment_hub.html">Experiment Hub</a><input aria-label="Toggle navigation of Experiment Hub" class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" role="switch" type="checkbox"/><label for="toctree-checkbox-2"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul class="simple">
+</ul>
+</li>
+</ul>
+
+</div>
+</div>
+
+      </div>
+      
+    </div>
+  </aside>
+  <div class="main">
+    <div class="content">
+      <div class="article-container">
+        <a href="#" class="back-to-top muted-link">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+            <path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8v12z"></path>
+          </svg>
+          <span>Back to top</span>
+        </a>
+        <div class="content-icon-container">
+          <div class="view-this-page">
+  <a class="muted-link" href="../_sources/desq_modules/VoltagePanel.rst.txt" title="View this page">
+    <svg><use href="#svg-eye"></use></svg>
+    <span class="visually-hidden">View this page</span>
+  </a>
+</div>
+<div class="theme-toggle-container theme-toggle-content">
+            <button class="theme-toggle" aria-label="Toggle Light / Dark / Auto color theme">
+              <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+              <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+              <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+              <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+            </button>
+          </div>
+          <label class="toc-overlay-icon toc-content-icon" for="__toc">
+            <span class="icon"><svg><use href="#svg-toc"></use></svg></span>
+          </label>
+        </div>
+        <article role="main" id="furo-main-content">
+          <section id="module-scripts.VoltagePanel">
+<span id="voltagepanel"></span><h1>VoltagePanel<a class="headerlink" href="#module-scripts.VoltagePanel" title="Link to this heading">¶</a></h1>
+<section id="voltagepanel-py">
+<h2>VoltagePanel.py<a class="headerlink" href="#voltagepanel-py" title="Link to this heading">¶</a></h2>
+<p>The home of a voltage controller interface panel for Qblox and Yoko hardware.</p>
+<p>This module provides a GUI panel for manual voltage control across multiple
+channels, supporting both Qblox (16-channel DAC) and Yokogawa GS200 (single-channel)
+voltage sources. The panel allows users to:</p>
+<ul class="simple">
+<li><p>Select and configure voltage interface hardware</p></li>
+<li><p>Connect/disconnect from hardware with visual feedback</p></li>
+<li><p>Set voltages on individual channels with range validation</p></li>
+<li><p>View current voltage values across all channels</p></li>
+</ul>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Sweeps functionality and passing a reference of the voltage interface
+are only supported for ExperimentPlus experiments. The sweeps UI code
+is currently commented out. Sweeps should instead be done within experiment
+files</p>
+</div>
+<dl class="field-list simple">
+<dt class="field-odd">var visa<span class="colon">:</span></dt>
+<dd class="field-odd"><p>PyVISA module for VISA instrument communication (used by Yoko).</p>
+</dd>
+</dl>
+<div class="admonition seealso">
+<p class="admonition-title">See also</p>
+<p><code class="xref py py-class docutils literal notranslate"><span class="pre">VoltageInterface</span></code> - Base class for voltage hardware interfaces.
+<code class="xref py py-class docutils literal notranslate"><span class="pre">YOKOGS200</span></code> - Yokogawa GS200 driver.
+<code class="xref py py-class docutils literal notranslate"><span class="pre">QBLOX</span></code> - Qblox DAC driver.</p>
+</div>
+</section>
+<dl class="py class">
+<dt class="sig sig-object py" id="scripts.VoltagePanel.QVoltagePanel">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">scripts.VoltagePanel.</span></span><span class="sig-name descname"><span class="pre">QVoltagePanel</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">config_tree_panel</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">current_Tab</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">parent</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">QWidget</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#scripts.VoltagePanel.QVoltagePanel" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">QWidget</span></code></p>
+<p>A custom QWidget class for the voltage control panel.</p>
+<p>This panel provides a complete interface for connecting to and controlling
+voltage source hardware. It supports both Qblox (16-channel DAC) and
+Yokogawa GS200 (single-channel) instruments.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Variables<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>yoko_settings</strong> (<em>Dict</em><em>[</em><em>str</em><em>, </em><em>str</em><em>]</em>) – Default settings for Yokogawa GS200 connection.</p></li>
+<li><p><strong>qblox_settings</strong> (<em>Dict</em><em>[</em><em>str</em><em>, </em><em>Any</em><em>]</em>) – Default settings for Qblox connection.</p></li>
+<li><p><strong>range_numbers</strong> (<em>Dict</em><em>[</em><em>int</em><em>, </em><em>List</em><em>[</em><em>float</em><em>]</em><em>]</em>) – Mapping of Qblox range_num to [min, max] voltage limits.</p></li>
+<li><p><strong>connected</strong> (<em>bool</em>) – Whether a voltage interface is currently connected.</p></li>
+<li><p><strong>voltage_interface</strong> (<em>Optional</em><em>[</em><em>VoltageInterface</em><em>]</em>) – The active voltage interface connection, or None.</p></li>
+<li><p><strong>voltage_hardware</strong> (<em>Optional</em><em>[</em><em>VoltageInterface</em><em>]</em>) – The hardware reference passed to experiments
+(usually same as voltage_interface).</p></li>
+<li><p><strong>range</strong> (<em>List</em><em>[</em><em>float</em><em>]</em>) – Current voltage range as [min, max] list.</p></li>
+<li><p><strong>parent</strong> (<em>QWidget</em>) – Parent widget reference.</p></li>
+<li><p><strong>config_tree_panel</strong> (<a class="reference internal" href="ConfigTreePanel.html#scripts.ConfigTreePanel.QConfigTreePanel" title="scripts.ConfigTreePanel.QConfigTreePanel"><em>QConfigTreePanel</em></a>) – Reference to the configuration tree panel for
+updating config values via the UI.</p></li>
+<li><p><strong>current_tab</strong> (<em>QQuarkTab</em>) – Reference to the current experiment tab.</p></li>
+<li><p><strong>main_layout</strong> (<em>QVBoxLayout</em>) – The main vertical layout containing all components.</p></li>
+<li><p><strong>interface_connect_layout</strong> (<em>QVBoxLayout</em>) – Layout for connection controls.</p></li>
+<li><p><strong>voltage_interface_combo</strong> (<em>QComboBox</em>) – Dropdown to select voltage interface type.</p></li>
+<li><p><strong>voltage_interface_currtype</strong> (<em>str</em>) – Currently selected interface type string.</p></li>
+<li><p><strong>voltage_interface_settings</strong> (<em>QTextEdit</em>) – Text editor for JSON connection settings.</p></li>
+<li><p><strong>create_connection_button</strong> (<em>QPushButton</em>) – Button to create/delete connection.</p></li>
+<li><p><strong>controller_content</strong> (<em>QWidget</em>) – Widget containing channel controls.</p></li>
+<li><p><strong>controller_layout</strong> (<em>QVBoxLayout</em>) – Layout for controller content.</p></li>
+<li><p><strong>voltage_channels_group</strong> (<em>QGroupBox</em>) – Group box containing channel controls.</p></li>
+<li><p><strong>voltage_channels_layout</strong> (<em>QVBoxLayout</em>) – Layout inside the channels group box.</p></li>
+<li><p><strong>voltage_range_label</strong> (<em>QLabel</em>) – Label showing current voltage range.</p></li>
+<li><p><strong>channel_scroll_area</strong> (<em>QScrollArea</em>) – Scroll area for channel list.</p></li>
+<li><p><strong>channel_list</strong> (<em>QWidget</em>) – Widget containing channel layouts.</p></li>
+<li><p><strong>channel_list_layout</strong> (<em>QVBoxLayout</em>) – Layout for channel list.</p></li>
+<li><p><strong>qblox_channel_list</strong> (<em>QWidget</em>) – Widget containing Qblox channel controls.</p></li>
+<li><p><strong>qblox_channel_list_layout</strong> (<em>QVBoxLayout</em>) – Layout for Qblox channels.</p></li>
+<li><p><strong>yoko_channel_list</strong> (<em>QWidget</em>) – Widget containing Yoko channel control.</p></li>
+<li><p><strong>yoko_channel_list_layout</strong> (<em>QVBoxLayout</em>) – Layout for Yoko channel.</p></li>
+<li><p><strong>is_connecting</strong> (<em>bool</em>) – Flag indicating connection attempt in progress.</p></li>
+<li><p><strong>connecting_dot_count</strong> (<em>int</em>) – Counter for connection animation dots.</p></li>
+<li><p><strong>aux_thread</strong> (<em>QThread</em>) – Background thread for connection operations.</p></li>
+<li><p><strong>aux_worker</strong> (<a class="reference internal" href="AuxiliaryThread.html#scripts.AuxiliaryThread.AuxiliaryThread" title="scripts.AuxiliaryThread.AuxiliaryThread"><em>AuxiliaryThread</em></a>) – Worker object running in aux_thread.</p></li>
+</ul>
+</dd>
+</dl>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>The sweeps functionality (<code class="docutils literal notranslate"><span class="pre">sweeps_group</span></code>, <code class="docutils literal notranslate"><span class="pre">sweeps_layout</span></code>) is
+currently commented out in the implementation. This appears to be
+planned functionality for voltage sweep operations.</p>
+</div>
+<dl class="py method">
+<dt class="sig sig-object py" id="scripts.VoltagePanel.QVoltagePanel.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">config_tree_panel</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">current_Tab</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">parent</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">QWidget</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#scripts.VoltagePanel.QVoltagePanel.__init__" title="Link to this definition">¶</a></dt>
+<dd><p>Initialize the custom QWidget class that is the Voltage Panel.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>config_tree_panel</strong> (<a class="reference internal" href="ConfigTreePanel.html#scripts.ConfigTreePanel.QConfigTreePanel" title="scripts.ConfigTreePanel.QConfigTreePanel"><em>QConfigTreePanel</em></a>) – The configuration tree panel for updating
+config values via the UI.</p></li>
+<li><p><strong>current_Tab</strong> (<em>QQuarkTab</em>) – The current experiment tab widget.</p></li>
+<li><p><strong>parent</strong> (<em>QWidget</em>) – The parent widget.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="scripts.VoltagePanel.QVoltagePanel.animate_connecting">
+<span class="sig-name descname"><span class="pre">animate_connecting</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#scripts.VoltagePanel.QVoltagePanel.animate_connecting" title="Link to this definition">¶</a></dt>
+<dd><p>Animate the connection button to show progress.</p>
+<p>Cycles through “Connecting”, “Connecting.”, “Connecting..”,
+“Connecting…” with a 500ms interval while <code class="docutils literal notranslate"><span class="pre">is_connecting</span></code>
+is True.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="scripts.VoltagePanel.QVoltagePanel.changed_tabs">
+<span class="sig-name descname"><span class="pre">changed_tabs</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">current_tab</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#scripts.VoltagePanel.QVoltagePanel.changed_tabs" title="Link to this definition">¶</a></dt>
+<dd><p>Handle experiment tab changes.</p>
+<p>Called when the experiment tab is changed. Updates the current tab
+reference and could enable/disable sweeps functionality based on
+experiment type.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>current_tab</strong> (<em>Optional</em><em>[</em><em>QQuarkTab</em><em>]</em>) – The tab object of the current tab, or None to
+keep the existing reference.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="scripts.VoltagePanel.QVoltagePanel.create_connection">
+<span class="sig-name descname"><span class="pre">create_connection</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">bool</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span></span><a class="headerlink" href="#scripts.VoltagePanel.QVoltagePanel.create_connection" title="Link to this definition">¶</a></dt>
+<dd><p>Create a new connection to the selected voltage interface.</p>
+<p>Parses the settings from the text editor, validates the JSON format,
+and starts a background thread to initialize the hardware connection.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>False if JSON parsing fails, None otherwise (result comes
+via signal from background thread).</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>Optional[bool]</p>
+</dd>
+<dt class="field-odd">Raises<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>json.JSONDecodeError</strong> – Caught internally - shows error dialog.</p>
+</dd>
+</dl>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>The actual connection happens in a background thread via
+<code class="xref py py-class docutils literal notranslate"><span class="pre">AuxiliaryThread</span></code>. Success/failure is communicated via
+signals to <a class="reference internal" href="#scripts.VoltagePanel.QVoltagePanel.successful_interface_connection" title="scripts.VoltagePanel.QVoltagePanel.successful_interface_connection"><code class="xref py py-meth docutils literal notranslate"><span class="pre">successful_interface_connection()</span></code></a> or
+<a class="reference internal" href="#scripts.VoltagePanel.QVoltagePanel.failed_connection_error" title="scripts.VoltagePanel.QVoltagePanel.failed_connection_error"><code class="xref py py-meth docutils literal notranslate"><span class="pre">failed_connection_error()</span></code></a>.</p>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="scripts.VoltagePanel.QVoltagePanel.delete_connection">
+<span class="sig-name descname"><span class="pre">delete_connection</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#scripts.VoltagePanel.QVoltagePanel.delete_connection" title="Link to this definition">¶</a></dt>
+<dd><p>Delete the connection to the voltage interface.</p>
+<p>Deletes the voltage_interface variable and sets the reference to None.
+This allows Python’s garbage collector to clean up the hardware
+connection resources.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="scripts.VoltagePanel.QVoltagePanel.failed_connection_error">
+<span class="sig-name descname"><span class="pre">failed_connection_error</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">e</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">timeout</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#scripts.VoltagePanel.QVoltagePanel.failed_connection_error" title="Link to this definition">¶</a></dt>
+<dd><p>Handle a failed connection error from the auxiliary thread.</p>
+<p>Shows an error dialog and resets the connection button to allow
+retry attempts.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>e</strong> (<em>str</em>) – Error message describing the failure.</p></li>
+<li><p><strong>timeout</strong> (<em>bool</em>) – Whether the failure was due to a timeout.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="scripts.VoltagePanel.QVoltagePanel.handle_voltInterface_change">
+<span class="sig-name descname"><span class="pre">handle_voltInterface_change</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">index</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#scripts.VoltagePanel.QVoltagePanel.handle_voltInterface_change" title="Link to this definition">¶</a></dt>
+<dd><p>Handle when the user changes the voltage interface type.</p>
+<p>Switches between Qblox and Yoko channel displays and updates
+the settings text field with appropriate defaults.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>index</strong> (<em>int</em>) – The index of the selection made in the combo box.
+Not used directly - the current text is read from the combo box.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="scripts.VoltagePanel.QVoltagePanel.init_qblox">
+<span class="sig-name descname"><span class="pre">init_qblox</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">settings</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">QBLOX</span></span></span><a class="headerlink" href="#scripts.VoltagePanel.QVoltagePanel.init_qblox" title="Link to this definition">¶</a></dt>
+<dd><p>Initialize a Qblox instance with the given parameters.</p>
+<p>This is called from the auxiliary thread to perform the actual
+hardware initialization.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>settings</strong> (<em>Any</em>) – Dictionary of parameters to initialize the Qblox.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>The initialized QBLOX instance.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>QBLOX</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="scripts.VoltagePanel.QVoltagePanel.init_yoko">
+<span class="sig-name descname"><span class="pre">init_yoko</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">settings</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">YOKOGS200</span></span></span><a class="headerlink" href="#scripts.VoltagePanel.QVoltagePanel.init_yoko" title="Link to this definition">¶</a></dt>
+<dd><p>Initialize a Yokogawa GS200 instance with the given parameters.</p>
+<p>This is called from the auxiliary thread to perform the actual
+hardware initialization.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>settings</strong> (<em>Any</em>) – Dictionary of parameters including the ResourceManager.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>The initialized YOKOGS200 instance.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>YOKOGS200</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="scripts.VoltagePanel.QVoltagePanel.qblox_settings">
+<span class="sig-name descname"><span class="pre">qblox_settings</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">Dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Any</span><span class="p"><span class="pre">]</span></span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">{'COM_speed':</span> <span class="pre">1000000.0,</span> <span class="pre">'module':</span> <span class="pre">2,</span> <span class="pre">'num_dacs':</span> <span class="pre">16,</span> <span class="pre">'port':</span> <span class="pre">'COM3',</span> <span class="pre">'ramp_interval':</span> <span class="pre">0.05,</span> <span class="pre">'ramp_step':</span> <span class="pre">0.003,</span> <span class="pre">'range_num':</span> <span class="pre">2,</span> <span class="pre">'reset_voltages':</span> <span class="pre">False,</span> <span class="pre">'timeout':</span> <span class="pre">1}</span></span><a class="headerlink" href="#scripts.VoltagePanel.QVoltagePanel.qblox_settings" title="Link to this definition">¶</a></dt>
+<dd><p>Default Qblox connection settings.
+Modify this dictionary to change default values.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">range_num</span></code> parameter determines the voltage range:</p>
+<ul class="simple">
+<li><p>0: 0 to 4V (unipolar)</p></li>
+<li><p>2: -4 to 4V (bipolar, default)</p></li>
+<li><p>4: -2 to 2V (bipolar)</p></li>
+</ul>
+</div>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="scripts.VoltagePanel.QVoltagePanel.range_numbers">
+<span class="sig-name descname"><span class="pre">range_numbers</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">Dict</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">float</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">{0:</span> <span class="pre">[0,</span> <span class="pre">4],</span> <span class="pre">2:</span> <span class="pre">[-4,</span> <span class="pre">4],</span> <span class="pre">4:</span> <span class="pre">[-2,</span> <span class="pre">2]}</span></span><a class="headerlink" href="#scripts.VoltagePanel.QVoltagePanel.range_numbers" title="Link to this definition">¶</a></dt>
+<dd><p>Mapping of Qblox range_num values to [min, max] voltage ranges.</p>
+<ul class="simple">
+<li><p>0: range_4V_uni (span 0) → [0, 4]</p></li>
+<li><p>2: range_4V_bi (span 2) → [-4, 4] (default)</p></li>
+<li><p>4: range_2V_bi (span 4) → [-2, 2]</p></li>
+</ul>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="scripts.VoltagePanel.QVoltagePanel.set_voltage">
+<span class="sig-name descname"><span class="pre">set_voltage</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">channel</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">voltage_input</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">QLineEdit</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">set_button</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#scripts.VoltagePanel.QVoltagePanel.set_voltage" title="Link to this definition">¶</a></dt>
+<dd><p>Set voltage on the specified channel of the connected interface.</p>
+<p>Validates the voltage against the current range before setting.
+Provides visual feedback via the Set button text during operation.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>channel</strong> (<em>int</em>) – Zero-indexed channel number to set.</p></li>
+<li><p><strong>voltage_input</strong> (<em>QLineEdit</em>) – The QLineEdit containing the voltage value.</p></li>
+<li><p><strong>set_button</strong> (<em>QPushButton</em>) – The Set button to update with status text.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>ValueError</strong> – If voltage_input text cannot be converted to float.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="scripts.VoltagePanel.QVoltagePanel.setup_signals">
+<span class="sig-name descname"><span class="pre">setup_signals</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#scripts.VoltagePanel.QVoltagePanel.setup_signals" title="Link to this definition">¶</a></dt>
+<dd><p>Set up all the signals and slots of the Voltage Panel.</p>
+<p>Connects:</p>
+<ul class="simple">
+<li><p>voltage_interface_combo.currentIndexChanged → handle_voltInterface_change</p></li>
+<li><p>create_connection_button.clicked → toggle_create_connection</p></li>
+</ul>
+<p>Also disables the voltage channels group until a connection is made.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="scripts.VoltagePanel.QVoltagePanel.setup_voltage_channels">
+<span class="sig-name descname"><span class="pre">setup_voltage_channels</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#scripts.VoltagePanel.QVoltagePanel.setup_voltage_channels" title="Link to this definition">¶</a></dt>
+<dd><p>Set up the UI for the voltage channels for both Qblox and Yoko.</p>
+<p>Creates 16 channel rows for Qblox (channels 1-16) and 1 channel
+row for Yoko. Each row contains a label, voltage input field,
+and Set button.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>The lambda capture pattern with default arguments
+<code class="docutils literal notranslate"><span class="pre">lambda</span> <span class="pre">_,</span> <span class="pre">ch=i,</span> <span class="pre">input_box=channel_voltage_input,</span> <span class="pre">...</span></code>
+is used to avoid the late binding issue where all lambdas
+would otherwise reference the final loop value.</p>
+</div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Channel numbers displayed to user are 1-indexed, but the
+internal channel parameter passed to <code class="docutils literal notranslate"><span class="pre">set_voltage</span></code> is
+0-indexed (ch-1).</p>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="scripts.VoltagePanel.QVoltagePanel.setup_voltage_interface_settings">
+<span class="sig-name descname"><span class="pre">setup_voltage_interface_settings</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#scripts.VoltagePanel.QVoltagePanel.setup_voltage_interface_settings" title="Link to this definition">¶</a></dt>
+<dd><p>Set up the voltage interface settings with default values.</p>
+<p>Populates the settings text editor with JSON-formatted default
+settings for either Yoko or Qblox based on current selection.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>The JSON formatting removes the outer braces and adds them back
+when parsing, which allows users to edit just the inner content.
+This is a somewhat fragile approach.</p>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="scripts.VoltagePanel.QVoltagePanel.successful_interface_connection">
+<span class="sig-name descname"><span class="pre">successful_interface_connection</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">voltage_interface</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">VoltageInterface</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#scripts.VoltagePanel.QVoltagePanel.successful_interface_connection" title="Link to this definition">¶</a></dt>
+<dd><p>Handle a successful voltage interface connection.</p>
+<p>Saves the connected interface, updates the UI to show connection
+status, and refreshes the channel voltage displays.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>voltage_interface</strong> (<em>VoltageInterface</em>) – The successfully connected voltage interface.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="scripts.VoltagePanel.QVoltagePanel.toggle_create_connection">
+<span class="sig-name descname"><span class="pre">toggle_create_connection</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#scripts.VoltagePanel.QVoltagePanel.toggle_create_connection" title="Link to this definition">¶</a></dt>
+<dd><p>Toggle the create connection button between create and delete modes.</p>
+<p>Ensures we are not creating multiple instances of voltage interfaces.
+When creating, starts the connection animation and initiates the
+connection in a background thread. When deleting, disconnects and
+re-enables the UI for a new connection.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="scripts.VoltagePanel.QVoltagePanel.update_voltage_channels">
+<span class="sig-name descname"><span class="pre">update_voltage_channels</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#scripts.VoltagePanel.QVoltagePanel.update_voltage_channels" title="Link to this definition">¶</a></dt>
+<dd><p>Update the voltage channel displays with current hardware values.</p>
+<p>Retrieves all current voltages from the connected voltage interface
+and updates the placeholder text of each channel’s input field.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="scripts.VoltagePanel.QVoltagePanel.yoko_settings">
+<span class="sig-name descname"><span class="pre">yoko_settings</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">Dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">{'VISAaddress':</span> <span class="pre">'USB0::0x0B21::0x0039::91S929901::0::INSTR'}</span></span><a class="headerlink" href="#scripts.VoltagePanel.QVoltagePanel.yoko_settings" title="Link to this definition">¶</a></dt>
+<dd><p>Default Yokogawa GS200 VISA connection settings.
+Modify this dictionary to change default values.</p>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+
+        </article>
+      </div>
+      <footer>
+        
+        <div class="related-pages">
+          <a class="next-page" href="LogPanel.html">
+              <div class="page-info">
+                <div class="context">
+                  <span>Next</span>
+                </div>
+                <div class="title">LogPanel</div>
+              </div>
+              <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
+            </a>
+          <a class="prev-page" href="AccountsPanel.html">
+              <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
+              <div class="page-info">
+                <div class="context">
+                  <span>Previous</span>
+                </div>
+                
+                <div class="title">AccountsPanel</div>
+                
+              </div>
+            </a>
+        </div>
+        <div class="bottom-of-page">
+          <div class="left-details">
+            <div class="copyright">
+                Copyright &#169; 2025, Lev, Jake, Matt, Sonny
+            </div>
+            Made with <a href="https://www.sphinx-doc.org/">Sphinx</a> and <a class="muted-link" href="https://pradyunsg.me">@pradyunsg</a>'s
+            
+            <a href="https://github.com/pradyunsg/furo">Furo</a>
+            
+          </div>
+          <div class="right-details">
+            
+          </div>
+        </div>
+        
+      </footer>
+    </div>
+    <aside class="toc-drawer">
+      
+      
+      <div class="toc-sticky toc-scroll">
+        <div class="toc-title-container">
+          <span class="toc-title">
+            On this page
+          </span>
+        </div>
+        <div class="toc-tree-container">
+          <div class="toc-tree">
+            <ul>
+<li><a class="reference internal" href="#">VoltagePanel</a><ul>
+<li><a class="reference internal" href="#voltagepanel-py">VoltagePanel.py</a></li>
+<li><a class="reference internal" href="#scripts.VoltagePanel.QVoltagePanel"><code class="docutils literal notranslate"><span class="pre">QVoltagePanel</span></code></a><ul>
+<li><a class="reference internal" href="#scripts.VoltagePanel.QVoltagePanel.__init__"><code class="docutils literal notranslate"><span class="pre">QVoltagePanel.__init__()</span></code></a></li>
+<li><a class="reference internal" href="#scripts.VoltagePanel.QVoltagePanel.animate_connecting"><code class="docutils literal notranslate"><span class="pre">QVoltagePanel.animate_connecting()</span></code></a></li>
+<li><a class="reference internal" href="#scripts.VoltagePanel.QVoltagePanel.changed_tabs"><code class="docutils literal notranslate"><span class="pre">QVoltagePanel.changed_tabs()</span></code></a></li>
+<li><a class="reference internal" href="#scripts.VoltagePanel.QVoltagePanel.create_connection"><code class="docutils literal notranslate"><span class="pre">QVoltagePanel.create_connection()</span></code></a></li>
+<li><a class="reference internal" href="#scripts.VoltagePanel.QVoltagePanel.delete_connection"><code class="docutils literal notranslate"><span class="pre">QVoltagePanel.delete_connection()</span></code></a></li>
+<li><a class="reference internal" href="#scripts.VoltagePanel.QVoltagePanel.failed_connection_error"><code class="docutils literal notranslate"><span class="pre">QVoltagePanel.failed_connection_error()</span></code></a></li>
+<li><a class="reference internal" href="#scripts.VoltagePanel.QVoltagePanel.handle_voltInterface_change"><code class="docutils literal notranslate"><span class="pre">QVoltagePanel.handle_voltInterface_change()</span></code></a></li>
+<li><a class="reference internal" href="#scripts.VoltagePanel.QVoltagePanel.init_qblox"><code class="docutils literal notranslate"><span class="pre">QVoltagePanel.init_qblox()</span></code></a></li>
+<li><a class="reference internal" href="#scripts.VoltagePanel.QVoltagePanel.init_yoko"><code class="docutils literal notranslate"><span class="pre">QVoltagePanel.init_yoko()</span></code></a></li>
+<li><a class="reference internal" href="#scripts.VoltagePanel.QVoltagePanel.qblox_settings"><code class="docutils literal notranslate"><span class="pre">QVoltagePanel.qblox_settings</span></code></a></li>
+<li><a class="reference internal" href="#scripts.VoltagePanel.QVoltagePanel.range_numbers"><code class="docutils literal notranslate"><span class="pre">QVoltagePanel.range_numbers</span></code></a></li>
+<li><a class="reference internal" href="#scripts.VoltagePanel.QVoltagePanel.set_voltage"><code class="docutils literal notranslate"><span class="pre">QVoltagePanel.set_voltage()</span></code></a></li>
+<li><a class="reference internal" href="#scripts.VoltagePanel.QVoltagePanel.setup_signals"><code class="docutils literal notranslate"><span class="pre">QVoltagePanel.setup_signals()</span></code></a></li>
+<li><a class="reference internal" href="#scripts.VoltagePanel.QVoltagePanel.setup_voltage_channels"><code class="docutils literal notranslate"><span class="pre">QVoltagePanel.setup_voltage_channels()</span></code></a></li>
+<li><a class="reference internal" href="#scripts.VoltagePanel.QVoltagePanel.setup_voltage_interface_settings"><code class="docutils literal notranslate"><span class="pre">QVoltagePanel.setup_voltage_interface_settings()</span></code></a></li>
+<li><a class="reference internal" href="#scripts.VoltagePanel.QVoltagePanel.successful_interface_connection"><code class="docutils literal notranslate"><span class="pre">QVoltagePanel.successful_interface_connection()</span></code></a></li>
+<li><a class="reference internal" href="#scripts.VoltagePanel.QVoltagePanel.toggle_create_connection"><code class="docutils literal notranslate"><span class="pre">QVoltagePanel.toggle_create_connection()</span></code></a></li>
+<li><a class="reference internal" href="#scripts.VoltagePanel.QVoltagePanel.update_voltage_channels"><code class="docutils literal notranslate"><span class="pre">QVoltagePanel.update_voltage_channels()</span></code></a></li>
+<li><a class="reference internal" href="#scripts.VoltagePanel.QVoltagePanel.yoko_settings"><code class="docutils literal notranslate"><span class="pre">QVoltagePanel.yoko_settings</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+
+          </div>
+        </div>
+      </div>
+      
+      
+    </aside>
+  </div>
+</div><script src="../_static/documentation_options.js?v=3294030b"></script>
+    <script src="../_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="../_static/scripts/furo.js?v=46bd48cc"></script>
+    </body>
+</html>
