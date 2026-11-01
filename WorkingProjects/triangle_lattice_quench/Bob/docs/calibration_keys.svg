@@ -1,0 +1,44 @@
+<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 760 340' width='760' height='340' role='img' aria-label='Bob reads the base values and ignores the overrides and extras' font-size='13'>
+<style>
+  svg { --bg:#ffffff; --ink:#1f1e1d; --quiet:#5e5d59; --edge:#b8b5ab; --accent:#2f6fd0;
+        --good:#2e9e44; --bad:#d1453b; --none:#e8a317; }
+  @media (prefers-color-scheme: dark) {
+    svg { --bg:#1f2328; --ink:#f0eee6; --quiet:#b3b1a9; --edge:#6b6963; --accent:#5b9bf0; }
+  }
+  text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; fill: var(--ink); }
+  .q { fill: var(--quiet); font-size: 11.5px; }
+  .n { font-weight: 600; }
+  .t { font-size: 15px; font-weight: 600; }
+  .box { fill: none; stroke: var(--edge); stroke-width: 1.25; }
+  .acc { fill: var(--accent); fill-opacity: .12; stroke: var(--accent); stroke-width: 2; }
+  .ln { fill: none; stroke: var(--edge); stroke-width: 1.25; }
+</style>
+<rect width='760' height='340' rx='10' style='fill:var(--bg)'/>
+<text class='t' x='24' y='30'>Bob reads the base values and ignores the overrides and extras</text>
+<circle cx='30' cy='56' r='4.5' style='fill:var(--good)'/><text class='q' x='40' y='60'>Bob reads</text>
+<circle cx='130' cy='56' r='4.5' style='fill:var(--bad)'/><text class='q' x='140' y='60'>Bob ignores; lab code reads</text>
+<circle cx='330' cy='56' r='4.5' style='fill:var(--none)'/><text class='q' x='340' y='60'>No code applies it</text>
+<rect class='box' x='24' y='88' width='226' height='228' rx='8'/><text class='n' x='40' y='110'>drive_groups</text>
+<circle cx='44' cy='132' r='4.5' style='fill:var(--good)'/><text x='56' y='136' font-size='11.5'>FF_Pulses</text>
+<circle cx='44' cy='152' r='4.5' style='fill:var(--good)'/><text x='56' y='156' font-size='11.5'>FF_Readouts</text>
+<circle cx='44' cy='172' r='4.5' style='fill:var(--bad)'/><text x='56' y='176' font-size='11.5'>Qubit / FF_override</text>
+<circle cx='44' cy='192' r='4.5' style='fill:var(--bad)'/><text x='56' y='196' font-size='11.5'>Readout / FF_override</text>
+<circle cx='44' cy='212' r='4.5' style='fill:var(--good)'/><text x='56' y='216' font-size='11.5'>Qubit: Freq, Gain, sigma</text>
+<circle cx='44' cy='232' r='4.5' style='fill:var(--good)'/><text x='56' y='236' font-size='11.5'>Readout: Frequency, Gain</text>
+<circle cx='44' cy='252' r='4.5' style='fill:var(--good)'/><text x='56' y='256' font-size='11.5'>Readout_Time, ADC_Offset</text>
+<circle cx='44' cy='272' r='4.5' style='fill:var(--good)'/><text x='56' y='276' font-size='11.5'>SingleShot: angle, threshold</text>
+<circle cx='44' cy='292' r='4.5' style='fill:var(--good)'/><text x='56' y='296' font-size='11.5'>SingleShot: ng/ne_contrast</text>
+<rect class='box' x='266' y='88' width='226' height='228' rx='8'/><text class='n' x='282' y='110'>ff_groups / ramp_groups</text>
+<circle cx='286' cy='132' r='4.5' style='fill:var(--good)'/><text x='298' y='136' font-size='11.5'>FF_Expt</text>
+<circle cx='286' cy='152' r='4.5' style='fill:var(--none)'/><text x='298' y='156' font-size='11.5'>FF_Init_delta</text>
+<rect class='box' x='508' y='88' width='226' height='228' rx='8'/><text class='n' x='524' y='110'>ff_groups / dynamics_groups</text>
+<circle cx='528' cy='132' r='4.5' style='fill:var(--good)'/><text x='540' y='136' font-size='11.5'>FF_Dynamics</text>
+<circle cx='528' cy='152' r='4.5' style='fill:var(--good)'/><text x='540' y='156' font-size='11.5'>FF_BS</text>
+<circle cx='528' cy='172' r='4.5' style='fill:var(--good)'/><text x='540' y='176' font-size='11.5'>exact_t_bs</text>
+<circle cx='528' cy='192' r='4.5' style='fill:var(--good)'/><text x='540' y='196' font-size='11.5'>t_offset (Beamsplitter only)</text>
+<circle cx='528' cy='212' r='4.5' style='fill:var(--bad)'/><text x='540' y='216' font-size='11.5'>ij_gains</text>
+<circle cx='528' cy='232' r='4.5' style='fill:var(--bad)'/><text x='540' y='236' font-size='11.5'>ij_samples</text>
+<circle cx='528' cy='252' r='4.5' style='fill:var(--bad)'/><text x='540' y='256' font-size='11.5'>pad_bs</text>
+<circle cx='528' cy='272' r='4.5' style='fill:var(--bad)'/><text x='540' y='276' font-size='11.5'>meas_pi2_freq_abs</text>
+<circle cx='528' cy='292' r='4.5' style='fill:var(--bad)'/><text x='540' y='296' font-size='11.5'>meas_pi2_gain_abs</text>
+</svg>

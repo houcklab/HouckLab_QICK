@@ -1,0 +1,21 @@
+# Bob: block-based experiment builder. Everything Bob needs to run the GUI and its tests.
+# Versions match MasterProject/Client_modules/Desq_GUI/requirements.txt so the two environments agree.
+#
+#   conda create -n bob_qsim python=3.12 -y
+#   conda activate bob_qsim
+#   python -m pip install -r Bob/requirements.txt        # from WorkingProjects/triangle_lattice_quench/
+
+numpy==2.3.1
+scipy==1.16.0
+h5py==3.14.0
+PyQt5==5.15.11
+PyQt5_sip==12.17.0
+pyqtgraph==0.13.7
+matplotlib==3.10.3          # plots from exported scripts (--plot)
+pyparsing==3.2.3            # matplotlib dependency, pinned as in Desq
+qick==0.2.367
+Pyro4==4.82
+
+# tests
+pytest==8.4.1
+pytest-qt==4.5.0

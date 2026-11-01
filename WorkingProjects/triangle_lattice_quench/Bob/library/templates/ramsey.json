@@ -1,0 +1,178 @@
+{
+  "bob_version": 1,
+  "name": "Ramsey",
+  "description": "\u03c0/2, wait, \u03c0/2 on Q3.",
+  "station": "8QV1",
+  "calibration": {},
+  "settings": {
+    "reps": 1000,
+    "rounds": 1,
+    "sweeps": [
+      {
+        "axis": "t_wait",
+        "start": 0.0,
+        "stop": 5.0,
+        "points": 51,
+        "unit": "\u00b5s"
+      }
+    ]
+  },
+  "blocks": [
+    {
+      "type": "FFHold",
+      "id": "d0b9e55e",
+      "name": "Init",
+      "fields": {
+        "group": {
+          "value": "readout_3800"
+        },
+        "gains": {
+          "base": {
+            "ref": "calib:drive_groups/{group}/FF_Pulses"
+          }
+        },
+        "duration_us": {
+          "value": 0.2
+        }
+      },
+      "act": "prep"
+    },
+    {
+      "type": "FFHold",
+      "id": "87c9a860",
+      "name": "Wait",
+      "fields": {
+        "group": {
+          "value": "readout_3800"
+        },
+        "gains": {
+          "base": {
+            "ref": "calib:drive_groups/{group}/FF_Pulses"
+          }
+        },
+        "duration_us": {
+          "sweep": "t_wait"
+        }
+      },
+      "act": "dynamics"
+    },
+    {
+      "type": "FFHold",
+      "id": "7574197d",
+      "name": "Close",
+      "fields": {
+        "group": {
+          "value": "readout_3800"
+        },
+        "gains": {
+          "base": {
+            "ref": "calib:drive_groups/{group}/FF_Pulses"
+          }
+        },
+        "duration_us": {
+          "value": 0.2
+        }
+      },
+      "act": "readout"
+    },
+    {
+      "type": "Pi2Pulse",
+      "id": "515362d2",
+      "name": "\u03c0/2 Q3",
+      "fields": {
+        "qubit": {
+          "value": 3
+        },
+        "drive_group": {
+          "value": "readout_3800"
+        },
+        "entry": {
+          "value": ""
+        },
+        "freq": {
+          "ref": "calib:drive_groups/{drive_group}/entries/{entry}/Qubit/Frequency"
+        },
+        "gain": {
+          "ref": "calib:drive_groups/{drive_group}/entries/{entry}/Qubit/Gain",
+          "scale": 0.5
+        },
+        "sigma_us": {
+          "ref": "calib:drive_groups/{drive_group}/entries/{entry}/Qubit/sigma"
+        },
+        "phase": {
+          "value": 0.0
+        },
+        "relative_t": {
+          "value": "auto"
+        },
+        "len_sigmas": {
+          "value": 4.0
+        }
+      },
+      "segment": "d0b9e55e"
+    },
+    {
+      "type": "Pi2Pulse",
+      "id": "f9fc352b",
+      "name": "\u03c0/2 Q3",
+      "fields": {
+        "qubit": {
+          "value": 3
+        },
+        "drive_group": {
+          "value": "readout_3800"
+        },
+        "entry": {
+          "value": ""
+        },
+        "freq": {
+          "ref": "calib:drive_groups/{drive_group}/entries/{entry}/Qubit/Frequency"
+        },
+        "gain": {
+          "ref": "calib:drive_groups/{drive_group}/entries/{entry}/Qubit/Gain",
+          "scale": 0.5
+        },
+        "sigma_us": {
+          "ref": "calib:drive_groups/{drive_group}/entries/{entry}/Qubit/sigma"
+        },
+        "phase": {
+          "value": 0.0
+        },
+        "relative_t": {
+          "value": "auto"
+        },
+        "len_sigmas": {
+          "value": 4.0
+        }
+      },
+      "segment": "7574197d"
+    },
+    {
+      "type": "Measure",
+      "id": "d9390928",
+      "name": "Measure",
+      "fields": {
+        "readout_group": {
+          "value": "readout_3800"
+        },
+        "qubits": {
+          "value": [
+            3
+          ]
+        },
+        "mode": {
+          "value": "populations_corrected"
+        },
+        "ff_readout_gains": {
+          "base": {
+            "ref": "calib:drive_groups/{readout_group}/FF_Readouts"
+          }
+        },
+        "res_length_us": {
+          "ref": "station:res_length"
+        }
+      },
+      "act": "readout"
+    }
+  ]
+}

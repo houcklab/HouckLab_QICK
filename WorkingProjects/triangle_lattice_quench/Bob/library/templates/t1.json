@@ -1,0 +1,122 @@
+{
+  "bob_version": 1,
+  "name": "T1",
+  "description": "\u03c0 pulse on Q3, wait, measure.",
+  "station": "8QV1",
+  "calibration": {},
+  "settings": {
+    "reps": 1000,
+    "rounds": 1,
+    "sweeps": [
+      {
+        "axis": "t_wait",
+        "start": 0.0,
+        "stop": 50.0,
+        "points": 26,
+        "unit": "\u00b5s"
+      }
+    ]
+  },
+  "blocks": [
+    {
+      "type": "FFHold",
+      "id": "b41bf22c",
+      "name": "Init",
+      "fields": {
+        "group": {
+          "value": "readout_3800"
+        },
+        "gains": {
+          "base": {
+            "ref": "calib:drive_groups/{group}/FF_Pulses"
+          }
+        },
+        "duration_us": {
+          "value": 0.2
+        }
+      },
+      "act": "prep"
+    },
+    {
+      "type": "FFHold",
+      "id": "e59a2b2a",
+      "name": "Wait",
+      "fields": {
+        "group": {
+          "value": "readout_3800"
+        },
+        "gains": {
+          "base": {
+            "ref": "calib:drive_groups/{group}/FF_Pulses"
+          }
+        },
+        "duration_us": {
+          "sweep": "t_wait"
+        }
+      },
+      "act": "dynamics"
+    },
+    {
+      "type": "PiPulse",
+      "id": "c0eb2ed2",
+      "name": "\u03c0 Q3",
+      "fields": {
+        "qubit": {
+          "value": 3
+        },
+        "drive_group": {
+          "value": "readout_3800"
+        },
+        "entry": {
+          "value": ""
+        },
+        "freq": {
+          "ref": "calib:drive_groups/{drive_group}/entries/{entry}/Qubit/Frequency"
+        },
+        "gain": {
+          "ref": "calib:drive_groups/{drive_group}/entries/{entry}/Qubit/Gain"
+        },
+        "sigma_us": {
+          "ref": "calib:drive_groups/{drive_group}/entries/{entry}/Qubit/sigma"
+        },
+        "phase": {
+          "value": 0.0
+        },
+        "relative_t": {
+          "value": "auto"
+        },
+        "len_sigmas": {
+          "value": 4.0
+        }
+      },
+      "segment": "b41bf22c"
+    },
+    {
+      "type": "Measure",
+      "id": "a8000d8b",
+      "name": "Measure",
+      "fields": {
+        "readout_group": {
+          "value": "readout_3800"
+        },
+        "qubits": {
+          "value": [
+            3
+          ]
+        },
+        "mode": {
+          "value": "populations_corrected"
+        },
+        "ff_readout_gains": {
+          "base": {
+            "ref": "calib:drive_groups/{readout_group}/FF_Readouts"
+          }
+        },
+        "res_length_us": {
+          "ref": "station:res_length"
+        }
+      },
+      "act": "readout"
+    }
+  ]
+}

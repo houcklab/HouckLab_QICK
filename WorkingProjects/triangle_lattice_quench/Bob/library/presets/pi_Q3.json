@@ -1,0 +1,40 @@
+{
+  "bob_preset": 1,
+  "name": "\u03c0 Q3",
+  "blocks": [
+    {
+      "type": "PiPulse",
+      "id": "0cdd2ed2",
+      "name": "\u03c0 Q3",
+      "fields": {
+        "qubit": {
+          "value": 3
+        },
+        "drive_group": {
+          "value": "readout_3800"
+        },
+        "entry": {
+          "value": ""
+        },
+        "freq": {
+          "ref": "calib:drive_groups/{drive_group}/entries/{entry}/Qubit/Frequency"
+        },
+        "gain": {
+          "ref": "calib:drive_groups/{drive_group}/entries/{entry}/Qubit/Gain"
+        },
+        "sigma_us": {
+          "ref": "calib:drive_groups/{drive_group}/entries/{entry}/Qubit/sigma"
+        },
+        "phase": {
+          "value": 0.0
+        },
+        "relative_t": {
+          "value": "auto"
+        },
+        "len_sigmas": {
+          "value": 4.0
+        }
+      }
+    }
+  ]
+}

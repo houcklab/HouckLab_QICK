@@ -1,0 +1,272 @@
+{
+  "bob_version": 1,
+  "name": "BS correlations",
+  "description": "\u03c0 pulses, ramp to the 1234 lattice point, beamsplitter with swept swap time.",
+  "station": "8QV1",
+  "calibration": {},
+  "settings": {
+    "reps": 1000,
+    "rounds": 1,
+    "sweeps": [
+      {
+        "axis": "bs_extra",
+        "start": 0,
+        "stop": 100,
+        "points": 101,
+        "unit": "samples"
+      }
+    ]
+  },
+  "blocks": [
+    {
+      "type": "FFHold",
+      "id": "cfdfe89d",
+      "name": "Init",
+      "fields": {
+        "group": {
+          "value": "readout_3800"
+        },
+        "gains": {
+          "base": {
+            "ref": "calib:drive_groups/{group}/FF_Pulses"
+          }
+        },
+        "duration_us": {
+          "value": 0.4
+        }
+      },
+      "act": "prep"
+    },
+    {
+      "type": "FFRamp",
+      "id": "e09cdfc7",
+      "name": "Ramp",
+      "fields": {
+        "ramp_group": {
+          "value": "ramp_3800"
+        },
+        "ramp_entry": {
+          "value": "1234"
+        },
+        "start_gains": {
+          "base": {
+            "from_prev": true
+          }
+        },
+        "start_offset": {
+          "base": {
+            "value": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          }
+        },
+        "end_gains": {
+          "base": {
+            "ref": "calib:ff_groups/ramp_groups/{ramp_group}/{ramp_entry}/FF_Expt"
+          }
+        },
+        "duration_us": {
+          "value": 1.0
+        },
+        "shape": {
+          "value": "cubic"
+        }
+      },
+      "act": "prep"
+    },
+    {
+      "type": "Beamsplitter",
+      "id": "f2e67e8f",
+      "name": "Beamsplitter",
+      "fields": {
+        "bs_group": {
+          "value": "four_qubit_correlations"
+        },
+        "bs_entry": {
+          "value": "1234_correlations"
+        },
+        "readout_group": {
+          "value": "readout_3800"
+        },
+        "from_gains": {
+          "base": {
+            "from_prev": true
+          }
+        },
+        "bs_gains": {
+          "base": {
+            "ref": "calib:ff_groups/dynamics_groups/{bs_group}/{bs_entry}/FF_BS"
+          }
+        },
+        "bs_samples": {
+          "base": {
+            "ref": "calib:ff_groups/dynamics_groups/{bs_group}/{bs_entry}/exact_t_bs"
+          }
+        },
+        "extra_samples": {
+          "sweep": "bs_extra"
+        },
+        "t_offset": {
+          "base": {
+            "ref": "calib:ff_groups/dynamics_groups/{bs_group}/{bs_entry}/t_offset"
+          }
+        },
+        "intermediate_gains": {
+          "base": {
+            "value": [
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null
+            ]
+          }
+        },
+        "intermediate_samples": {
+          "base": {
+            "value": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          }
+        },
+        "pad_samples": {
+          "base": {
+            "value": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          }
+        },
+        "exit_gains": {
+          "base": {
+            "ref": "calib:drive_groups/{readout_group}/FF_Readouts"
+          }
+        }
+      },
+      "act": "readout"
+    },
+    {
+      "type": "PiPulse",
+      "id": "7206d923",
+      "name": "\u03c0 Q1",
+      "fields": {
+        "qubit": {
+          "value": 1
+        },
+        "drive_group": {
+          "value": "readout_3800"
+        },
+        "entry": {
+          "value": ""
+        },
+        "freq": {
+          "ref": "calib:drive_groups/{drive_group}/entries/{entry}/Qubit/Frequency"
+        },
+        "gain": {
+          "ref": "calib:drive_groups/{drive_group}/entries/{entry}/Qubit/Gain"
+        },
+        "sigma_us": {
+          "ref": "calib:drive_groups/{drive_group}/entries/{entry}/Qubit/sigma"
+        },
+        "phase": {
+          "value": 0.0
+        },
+        "relative_t": {
+          "value": "auto"
+        },
+        "len_sigmas": {
+          "value": 4.0
+        }
+      },
+      "segment": "cfdfe89d"
+    },
+    {
+      "type": "PiPulse",
+      "id": "66e61e97",
+      "name": "\u03c0 Q3",
+      "fields": {
+        "qubit": {
+          "value": 3
+        },
+        "drive_group": {
+          "value": "readout_3800"
+        },
+        "entry": {
+          "value": ""
+        },
+        "freq": {
+          "ref": "calib:drive_groups/{drive_group}/entries/{entry}/Qubit/Frequency"
+        },
+        "gain": {
+          "ref": "calib:drive_groups/{drive_group}/entries/{entry}/Qubit/Gain"
+        },
+        "sigma_us": {
+          "ref": "calib:drive_groups/{drive_group}/entries/{entry}/Qubit/sigma"
+        },
+        "phase": {
+          "value": 0.0
+        },
+        "relative_t": {
+          "value": "auto"
+        },
+        "len_sigmas": {
+          "value": 4.0
+        }
+      },
+      "segment": "cfdfe89d"
+    },
+    {
+      "type": "Measure",
+      "id": "bb76f9bb",
+      "name": "Measure",
+      "fields": {
+        "readout_group": {
+          "value": "readout_3800"
+        },
+        "qubits": {
+          "value": [
+            1,
+            2,
+            3,
+            4
+          ]
+        },
+        "mode": {
+          "value": "populations_corrected"
+        },
+        "ff_readout_gains": {
+          "base": {
+            "ref": "calib:drive_groups/{readout_group}/FF_Readouts"
+          }
+        },
+        "res_length_us": {
+          "ref": "station:res_length"
+        }
+      },
+      "act": "readout"
+    }
+  ]
+}

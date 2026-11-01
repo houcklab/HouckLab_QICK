@@ -1,0 +1,34 @@
+<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 760 308' width='760' height='308' role='img' aria-label='Every point is saved and drawn as soon as it is measured' font-size='13'>
+<style>
+  svg { --bg:#ffffff; --ink:#1f1e1d; --quiet:#5e5d59; --edge:#b8b5ab; --accent:#2f6fd0;
+        --good:#2e9e44; --bad:#d1453b; --none:#e8a317; }
+  @media (prefers-color-scheme: dark) {
+    svg { --bg:#1f2328; --ink:#f0eee6; --quiet:#b3b1a9; --edge:#6b6963; --accent:#5b9bf0; }
+  }
+  text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; fill: var(--ink); }
+  .q { fill: var(--quiet); font-size: 11.5px; }
+  .n { font-weight: 600; }
+  .t { font-size: 15px; font-weight: 600; }
+  .box { fill: none; stroke: var(--edge); stroke-width: 1.25; }
+  .acc { fill: var(--accent); fill-opacity: .12; stroke: var(--accent); stroke-width: 2; }
+  .ln { fill: none; stroke: var(--edge); stroke-width: 1.25; }
+</style>
+<rect width='760' height='308' rx='10' style='fill:var(--bg)'/>
+<defs><marker id='a' viewBox='0 0 10 10' refX='9' refY='5' markerWidth='6' markerHeight='6' orient='auto-start-reverse'><path d='M0 0L10 5L0 10z' style='fill:var(--edge)'/></marker></defs>
+<text class='t' x='24' y='34'>Every point is saved and drawn as soon as it is measured</text>
+<rect x='196' y='64' width='340' height='120' rx='8' style='fill:none;stroke:var(--edge);stroke-width:1.25;stroke-dasharray:4 4'/>
+<text class='q' x='212' y='84'>repeated for each sweep point</text>
+<rect class='box' x='24' y='96' width='140' height='56' rx='8'/><text class='n' x='94.0' text-anchor='middle' y='120'>Run</text><text class='q' x='94.0' text-anchor='middle' y='138'>GUI Run or --run</text>
+<rect class='box' x='212' y='100' width='92' height='56' rx='8'/><text class='n' x='258.0' text-anchor='middle' y='124'>Compile</text><text class='q' x='258.0' text-anchor='middle' y='142'>this point</text>
+<rect class='box' x='320' y='100' width='92' height='56' rx='8'/><text class='n' x='366.0' text-anchor='middle' y='124'>Board</text><text class='q' x='366.0' text-anchor='middle' y='142'>or simulated</text>
+<rect class='acc' x='428' y='100' width='92' height='56' rx='8'/><text class='n' x='474.0' text-anchor='middle' y='124'>Result</text><text class='q' x='474.0' text-anchor='middle' y='142'>per qubit</text>
+<rect class='box' x='568' y='64' width='168' height='56' rx='8'/><text class='n' x='652.0' text-anchor='middle' y='88'>Saved</text><text class='q' x='652.0' text-anchor='middle' y='106'>.h5, as it goes</text>
+<rect class='box' x='568' y='136' width='168' height='56' rx='8'/><text class='n' x='652.0' text-anchor='middle' y='160'>Drawn</text><text class='q' x='652.0' text-anchor='middle' y='178'>Data tab / live figure</text>
+<rect class='box' x='196' y='228' width='540' height='56' rx='8'/><text class='n' x='212' y='252'>At the end</text><text class='q' x='212' y='270'>status in the file (complete, stopped or failed), PNG next to it, run kept in the history bar</text>
+<path class='ln' d='M164 124H212' marker-end='url(#a)'/>
+<path class='ln' d='M304 128H320' marker-end='url(#a)'/>
+<path class='ln' d='M412 128H428' marker-end='url(#a)'/>
+<path class='ln' d='M520 128H544V92H568' marker-end='url(#a)'/>
+<path class='ln' d='M544 128V164H568' marker-end='url(#a)'/>
+<path class='ln' d='M366 184V228' marker-end='url(#a)'/>
+</svg>

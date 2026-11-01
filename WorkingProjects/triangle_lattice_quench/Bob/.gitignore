@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+# the README screenshots (the repo ignores *.png everywhere else)
+!docs/*.png

@@ -1,0 +1,50 @@
+{
+  "bob_preset": 1,
+  "name": "Ramp to 3800 lattice",
+  "blocks": [
+    {
+      "type": "FFRamp",
+      "id": "179af151",
+      "name": "Ramp to 3800 lattice",
+      "fields": {
+        "ramp_group": {
+          "value": "ramp_3800"
+        },
+        "ramp_entry": {
+          "value": "8Q_1854"
+        },
+        "start_gains": {
+          "base": {
+            "from_prev": true
+          }
+        },
+        "start_offset": {
+          "base": {
+            "value": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          }
+        },
+        "end_gains": {
+          "base": {
+            "ref": "calib:ff_groups/ramp_groups/{ramp_group}/{ramp_entry}/FF_Expt"
+          }
+        },
+        "duration_us": {
+          "value": 1.0
+        },
+        "shape": {
+          "value": "cubic"
+        }
+      },
+      "act": "prep"
+    }
+  ]
+}

@@ -1,0 +1,93 @@
+{
+  "bob_preset": 1,
+  "name": "BS 1234 correlations",
+  "blocks": [
+    {
+      "type": "Beamsplitter",
+      "id": "2420e24d",
+      "name": "BS 1234 correlations",
+      "fields": {
+        "bs_group": {
+          "value": "four_qubit_correlations"
+        },
+        "bs_entry": {
+          "value": "1234_correlations"
+        },
+        "readout_group": {
+          "value": "readout_3800"
+        },
+        "from_gains": {
+          "base": {
+            "from_prev": true
+          }
+        },
+        "bs_gains": {
+          "base": {
+            "ref": "calib:ff_groups/dynamics_groups/{bs_group}/{bs_entry}/FF_BS"
+          }
+        },
+        "bs_samples": {
+          "base": {
+            "ref": "calib:ff_groups/dynamics_groups/{bs_group}/{bs_entry}/exact_t_bs"
+          }
+        },
+        "extra_samples": {
+          "value": 0
+        },
+        "t_offset": {
+          "base": {
+            "ref": "calib:ff_groups/dynamics_groups/{bs_group}/{bs_entry}/t_offset"
+          }
+        },
+        "intermediate_gains": {
+          "base": {
+            "value": [
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null
+            ]
+          }
+        },
+        "intermediate_samples": {
+          "base": {
+            "value": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          }
+        },
+        "pad_samples": {
+          "base": {
+            "value": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          }
+        },
+        "exit_gains": {
+          "base": {
+            "ref": "calib:drive_groups/{readout_group}/FF_Readouts"
+          }
+        }
+      },
+      "act": "readout"
+    }
+  ]
+}

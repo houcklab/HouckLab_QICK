@@ -1,0 +1,31 @@
+<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 760 390' width='760' height='390' role='img' aria-label='Every number comes from one of four layers' font-size='13'>
+<style>
+  svg { --bg:#ffffff; --ink:#1f1e1d; --quiet:#5e5d59; --edge:#b8b5ab; --accent:#2f6fd0;
+        --good:#2e9e44; --bad:#d1453b; --none:#e8a317; }
+  @media (prefers-color-scheme: dark) {
+    svg { --bg:#1f2328; --ink:#f0eee6; --quiet:#b3b1a9; --edge:#6b6963; --accent:#5b9bf0; }
+  }
+  text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; fill: var(--ink); }
+  .q { fill: var(--quiet); font-size: 11.5px; }
+  .n { font-weight: 600; }
+  .t { font-size: 15px; font-weight: 600; }
+  .box { fill: none; stroke: var(--edge); stroke-width: 1.25; }
+  .acc { fill: var(--accent); fill-opacity: .12; stroke: var(--accent); stroke-width: 2; }
+  .ln { fill: none; stroke: var(--edge); stroke-width: 1.25; }
+</style>
+<rect width='760' height='390' rx='10' style='fill:var(--bg)'/>
+<defs><marker id='a' viewBox='0 0 10 10' refX='9' refY='5' markerWidth='6' markerHeight='6' orient='auto-start-reverse'><path d='M0 0L10 5L0 10z' style='fill:var(--edge)'/></marker></defs>
+<text class='t' x='24' y='34'>Every number comes from one of four layers</text>
+<path class='ln' d='M256 100.0H284V208.0H312' marker-end='url(#a)'/>
+<path class='ln' d='M256 172.0H284V208.0H312' marker-end='url(#a)'/>
+<path class='ln' d='M256 244.0H284V208.0H312' marker-end='url(#a)'/>
+<path class='ln' d='M256 316.0H284V208.0H312' marker-end='url(#a)'/>
+<rect class='box' x='24' y='72' width='232' height='56' rx='8'/><text class='n' x='40' y='96'>Station</text><text class='q' x='40' y='114'>station.json · edited once per setup</text>
+<rect class='box' x='24' y='144' width='232' height='56' rx='8'/><text class='n' x='40' y='168'>Calibration</text><text class='q' x='40' y='186'>qubit_parameters.json · read only</text>
+<rect class='box' x='24' y='216' width='232' height='56' rx='8'/><text class='n' x='40' y='240'>Settings</text><text class='q' x='40' y='258'>reps, rounds, relax delay, sweeps</text>
+<rect class='box' x='24' y='288' width='232' height='56' rx='8'/><text class='n' x='40' y='312'>Block fields</text><text class='q' x='40' y='330'>Value · Ref · Sweep · FromPrev</text>
+<path class='ln' d='M512 208.0H560' marker-end='url(#a)'/>
+<rect class='acc' x='312' y='180' width='200' height='56' rx='8'/><text class='n' x='412.0' y='204' text-anchor='middle'>Bob</text><text class='q' x='412.0' y='222' text-anchor='middle'>resolve, validate, compile</text>
+<rect class='box' x='560' y='180' width='176' height='56' rx='8'/><text class='n' x='648.0' y='204' text-anchor='middle'>Program</text><text class='q' x='648.0' y='222' text-anchor='middle'>flux and drive arrays</text>
+<text class='q' x='24' y='370'>Settings and block fields are saved in the sequence .json.</text>
+</svg>

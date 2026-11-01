@@ -1,0 +1,34 @@
+{
+  "bob_preset": 1,
+  "name": "Quench to resonant",
+  "blocks": [
+    {
+      "type": "FFDynamics",
+      "id": "e039bb47",
+      "name": "Quench to resonant",
+      "fields": {
+        "dyn_group": {
+          "value": "dynamics_FF_points"
+        },
+        "dyn_entry": {
+          "value": "resonant"
+        },
+        "mode": {
+          "value": "hold"
+        },
+        "gains": {
+          "base": {
+            "ref": "calib:ff_groups/dynamics_groups/{dyn_group}/{dyn_entry}/FF_Dynamics"
+          }
+        },
+        "duration_us": {
+          "value": 0.5
+        },
+        "waveform_file": {
+          "value": ""
+        }
+      },
+      "act": "dynamics"
+    }
+  ]
+}

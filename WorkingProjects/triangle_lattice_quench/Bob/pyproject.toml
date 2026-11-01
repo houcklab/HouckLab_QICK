@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bob-builder"
+version = "0.1.0"
+description = "Block-based experiment builder for the Houck Lab triangle-lattice quench experiments"
+requires-python = ">=3.10"
+dependencies = ["numpy", "scipy", "h5py", "PyQt5", "pyqtgraph", "qick", "Pyro4"]
+
+[project.optional-dependencies]
+test = ["pytest", "pytest-qt"]
+
+[project.scripts]
+bob = "Bob.Bob_GUI.app:main"
+
+# This file sits inside the Bob/ package folder, so map the package to "."
+[tool.setuptools]
+package-dir = { "Bob" = "." }
+packages = ["Bob", "Bob.core", "Bob.blocks", "Bob.config", "Bob.compiler", "Bob.hardware", "Bob.runner",
+            "Bob.library", "Bob.Bob_GUI", "Bob.Bob_GUI.canvas", "Bob.Bob_GUI.panels"]
+
+[tool.setuptools.package-data]
+"Bob.library" = ["stations/*/*.json", "stations/*/iir/*", "presets/*.json", "templates/*.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["gui: drives the Qt GUI (needs PyQt5 + pytest-qt; runs offscreen)"]

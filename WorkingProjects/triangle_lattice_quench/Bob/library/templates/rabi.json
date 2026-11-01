@@ -1,0 +1,103 @@
+{
+  "bob_version": 1,
+  "name": "Rabi",
+  "description": "Amplitude Rabi on Q3: sweep the \u03c0-pulse gain.",
+  "station": "8QV1",
+  "calibration": {},
+  "settings": {
+    "reps": 1000,
+    "rounds": 1,
+    "sweeps": [
+      {
+        "axis": "gain",
+        "start": 0,
+        "stop": 20000,
+        "points": 41,
+        "unit": "DAC"
+      }
+    ]
+  },
+  "blocks": [
+    {
+      "type": "FFHold",
+      "id": "4b27e43e",
+      "name": "Init",
+      "fields": {
+        "group": {
+          "value": "readout_3800"
+        },
+        "gains": {
+          "base": {
+            "ref": "calib:drive_groups/{group}/FF_Pulses"
+          }
+        },
+        "duration_us": {
+          "value": 0.2
+        }
+      },
+      "act": "prep"
+    },
+    {
+      "type": "PiPulse",
+      "id": "e3fb089c",
+      "name": "Drive Q3",
+      "fields": {
+        "qubit": {
+          "value": 3
+        },
+        "drive_group": {
+          "value": "readout_3800"
+        },
+        "entry": {
+          "value": ""
+        },
+        "freq": {
+          "ref": "calib:drive_groups/{drive_group}/entries/{entry}/Qubit/Frequency"
+        },
+        "gain": {
+          "sweep": "gain"
+        },
+        "sigma_us": {
+          "ref": "calib:drive_groups/{drive_group}/entries/{entry}/Qubit/sigma"
+        },
+        "phase": {
+          "value": 0.0
+        },
+        "relative_t": {
+          "value": "auto"
+        },
+        "len_sigmas": {
+          "value": 4.0
+        }
+      },
+      "segment": "4b27e43e"
+    },
+    {
+      "type": "Measure",
+      "id": "3ec15afb",
+      "name": "Measure",
+      "fields": {
+        "readout_group": {
+          "value": "readout_3800"
+        },
+        "qubits": {
+          "value": [
+            3
+          ]
+        },
+        "mode": {
+          "value": "iq"
+        },
+        "ff_readout_gains": {
+          "base": {
+            "ref": "calib:drive_groups/{readout_group}/FF_Readouts"
+          }
+        },
+        "res_length_us": {
+          "ref": "station:res_length"
+        }
+      },
+      "act": "readout"
+    }
+  ]
+}
