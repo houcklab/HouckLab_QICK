@@ -812,11 +812,15 @@ _recipe("auto_coherence", " ".join(_AC), own=_AC)
 _recipe("single_shot", "number_of_pulses pi2_ss",
         inherit=_from("session:single_shot", "number_of_pulses", "pi2_ss"))
 _recipe("undriven_single_shot",
-        "shots relax_delay min_separation_sigma average_shots bin_sizes charge_sweep "
-        "voltage_start voltage_end voltage_step charge_settle_s repeat plot_disp", own={
+        "shots relax_delay relax_delay_sweep min_separation_sigma average_shots bin_sizes "
+        "charge_sweep voltage_start voltage_end voltage_step charge_settle_s repeat plot_disp",
+        own={
     "shots":                ("shots", "undriven single shots per acquisition"),
     "relax_delay":          ("us", "wait after each shot before the next", "runs",
                              "None: the single_shot group's relax_delay"),
+    "relax_delay_sweep":    ("us", "relax_delay values, one acquisition (own files) each, "
+                             "swept inside every repeat pass", "runs",
+                             "None: off; replaces relax_delay"),
     "min_separation_sigma": ("1", "blob separation (combined sigma) to call two blobs",
                              "analysis"),
     "average_shots":        ("shots", "consecutive shots averaged per time-series point",

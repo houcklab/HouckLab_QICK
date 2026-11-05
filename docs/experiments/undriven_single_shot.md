@@ -10,6 +10,7 @@ Recipe: `R.undriven_single_shot(...)` (`qicklab.runs.recipes`, `help(R.undriven_
 |---|---|---|---|---|
 | `shots` | `1000000` | shots | undriven single shots per acquisition |  |
 | `relax_delay` | `300` | us | wait after each shot before the next | None: the single_shot group's relax_delay |
+| `relax_delay_sweep` | `None` | us | relax_delay values, one acquisition (own files) each, swept inside every repeat pass | None: off; replaces relax_delay |
 | `min_separation_sigma` | `2.0` | 1 | blob separation (combined sigma) to call two blobs |  |
 | `average_shots` | `1` | shots | consecutive shots averaged per time-series point |  |
 | `bin_sizes` | `(1, 2, 4, ..., 64)` (7 values) | shots | averaging sizes of the rate-vs-averaging panel |  |
@@ -81,6 +82,21 @@ PLAN = [R.undriven_single_shot(charge_sweep=True, voltage_start=0.0,
   - The run returns the list of per-pass data dicts, so every pass's float64 payload
     (~72 MB per read per bias per 1e6 shots) stays in RAM until the run ends: memory
     grows linearly with `Repeat` (see the Parameters table).
+- **relax_delay sweep.** `relax_delay_sweep=(20, 50, 100, 300)` (µs) runs one
+  acquisition per value, in that order, and replaces `relax_delay`. `None` (default) is off.
+  - The sweep runs **inside** each `repeat` pass, so a slow drift of the parity rate
+    spreads over every delay instead of aliasing onto the delay axis.
+  - Each point is an ordinary acquisition with its own h5/png/json; its cfg carries that
+    point's `relax_delay` and the h5 its `scheduled_rep_period_us`. Group the files offline
+    by those.
+  - After each pass the run prints a table: relax_delay, shot period, and per read the
+    blob count and the Markov / ACF / HMM mean rates. A real telegraph rate should not
+    depend on the sampling period; a rate that grows as the delay shrinks points at
+    measurement-induced switching, one that grows with the delay at undersampling.
+  - It combines with `charge_sweep` (a full bias sweep per delay) and with
+    `interleaved_coherence` (the sweep runs in each cycle).
+  - The run returns `repeat` × len(sweep) data dicts, so RAM grows with both.
+  - Only the very last acquisition is shown on screen.
 - **Charge sweep.** Ramps the yoko through `np.arange(voltage_start, voltage_end,
   voltage_step)`, so the range is half-open and `voltage_end` is not measured. It
   waits `charge_settle_s` after each ramp and acquires at each bias, then **returns
@@ -104,6 +120,7 @@ values.
 |---|---|---|---|
 | `Shots` → `shots` | 1,000,000 | count | Shots per pass. More than single_shot, because a small secondary blob needs statistics. Required (KeyError if absent). |
 | `relax_delay` | 300 | µs | Wait after each readout. Sets the sampling period. Omit it to inherit the single-shot `relax_delay`. |
+| `relax_delay_sweep` | None | µs | Runner-only key. relax_delay values, one acquisition each inside every pass; replaces `relax_delay`. None = off. |
 | `min_separation_sigma` → `blob_min_separation_sigma` | 2.0 | combined σ | Two blobs are only called two if they are this far apart *and* BIC prefers two Gaussians. |
 | `average_shots` → `shot_average` | 1 | count | Consecutive shots averaged into one time-series point. 1 = off. Raising it trades time resolution for the sqrt(n) noise reduction that makes a marginal blob split resolvable; the rate-vs-averaging panel of the output plot shows where the useful plateau is. |
 | `bin_sizes` → `ts_bin_sizes` | (1, 2, 4, 8, 16, 32, 64) | shots | Averaging levels for the rate-vs-averaging sweep. |

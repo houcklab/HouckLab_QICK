@@ -446,6 +446,7 @@ _US = _Slot(
     (
         ("Shots", "shots"),
         ("relax_delay", "relax_delay"),
+        ("relax_delay_sweep", "relax_delay_sweep"),
         ("min_separation_sigma", "min_separation_sigma"),
         ("average_shots", "average_shots"),
         ("bin_sizes", "bin_sizes"),
@@ -479,6 +480,7 @@ def undriven_single_shot(
     *,
     shots=1_000_000,
     relax_delay=300,
+    relax_delay_sweep=None,
     min_separation_sigma=2.0,
     average_shots=1,
     bin_sizes=(1, 2, 4, 8, 16, 32, 64),
@@ -492,7 +494,9 @@ def undriven_single_shot(
 ):
     """Single shots with the drive off (UndrivenSingleShot): IQ blobs and switching, regime B.
 
-    shots; relax_delay [us] (None: the single_shot group's); min_separation_sigma: blob
+    shots; relax_delay [us] (None: the single_shot group's); relax_delay_sweep: relax_delay
+    values [us], one acquisition (own files) each, swept inside every repeat pass and
+    replacing relax_delay (None: off); min_separation_sigma: blob
     separation (combined sigma) to call two blobs; average_shots: consecutive shots averaged
     per time-series point; bin_sizes: rate-vs-averaging sweep. charge_sweep: one acquisition per
     bias np.arange(voltage_start, voltage_end, voltage_step) [V], charge_settle_s [s] after each

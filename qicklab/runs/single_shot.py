@@ -242,8 +242,10 @@ def run_single_shot(ctx, SS_params):
 
 
 def run_undriven_single_shot(ctx, US_params=None):
-    """Single-shot readout with the qubit drive off, `Repeat` passes; returns per-pass data.
+    """Single-shot readout with the qubit drive off, `Repeat` passes; returns per-acquisition data.
 
+    With `relax_delay_sweep`, each pass runs one acquisition per relax_delay value (in the given
+    order), so the list holds Repeat x len(sweep) data dicts, pass-major.
     Uses the single-shot-regime config; `US_params` keys: docs/experiments/undriven_single_shot.md
     """
     US_params = US_params or {}
@@ -264,26 +266,77 @@ def run_undriven_single_shot(ctx, US_params=None):
         if key in US_params:
             overrides[key] = US_params[key]
 
+    # one acquisition per relax_delay, swept inside each pass (None: the single relax_delay)
+    delays = _relax_delay_grid(US_params.get("relax_delay_sweep"))
+    point_overrides = (
+        [overrides] if delays is None else [overrides | {"relax_delay": d} for d in delays]
+    )
+
     n_repeat = max(1, int(US_params.get("Repeat", 1)))
     plot_disp = US_params.get("plotDisp", True)
     runs = []
     for k in range(n_repeat):
         if n_repeat > 1:
             print(f"\n[UndrivenSingleShot] pass {k + 1}/{n_repeat}")
-        cfg = ctx.working_config(overrides)  # fresh per pass: the program mutates it
-        inst = UndrivenSingleShot(
-            path="UndrivenSingleShot",
-            outerFolder=ctx.outerFolder,
-            cfg=cfg,
-            soc=ctx.soc,
-            soccfg=ctx.soccfg,
-            yoko=ctx.yoko,
-        )
-        data = UndrivenSingleShot.acquire(inst)
-        # only the last pass on screen: plotDisp blocks until the window is closed
-        finish(UndrivenSingleShot, inst, data, plotDisp=plot_disp and k == n_repeat - 1)
-        runs.append(data)
+        sweep_rows = []
+        for j, point in enumerate(point_overrides):
+            if delays is not None:
+                print(
+                    f"\n[UndrivenSingleShot] relax_delay {j + 1}/{len(delays)}: "
+                    f"{point['relax_delay']} us"
+                )
+            cfg = ctx.working_config(point)  # fresh per acquisition: the program mutates it
+            inst = UndrivenSingleShot(
+                path="UndrivenSingleShot",
+                outerFolder=ctx.outerFolder,
+                cfg=cfg,
+                soc=ctx.soc,
+                soccfg=ctx.soccfg,
+                yoko=ctx.yoko,
+            )
+            data = UndrivenSingleShot.acquire(inst)
+            # only the last acquisition on screen: plotDisp blocks until the window is closed
+            last = k == n_repeat - 1 and j == len(point_overrides) - 1
+            finish(UndrivenSingleShot, inst, data, plotDisp=plot_disp and last)
+            runs.append(data)
+            if delays is not None:
+                sweep_rows.append((point["relax_delay"], data))
+        if delays is not None:
+            _print_relax_delay_summary(sweep_rows)
     return runs
+
+
+def _relax_delay_grid(sweep):
+    """The relax_delay points [us] of a sweep, or None when it is off; checked before acquiring."""
+    if sweep is None:
+        return None
+    delays = [float(d) for d in np.atleast_1d(np.asarray(sweep, dtype=float))]
+    if not delays:
+        raise ValueError("relax_delay_sweep is empty: give the relax_delay values [us] or None")
+    if not all(np.isfinite(d) and d >= 0 for d in delays):
+        raise ValueError(f"relax_delay_sweep must be finite and >= 0 us, got {delays}")
+    return delays
+
+
+def _print_relax_delay_summary(rows):
+    """One line per relax_delay: shot period and the switching rates of each read."""
+    print("\n[UndrivenSingleShot] relax_delay sweep summary")
+    print("  relax_delay [us]  period [us]  read  n_blobs  gamma Markov / ACF / HMM [Hz]")
+    for delay, data in rows:
+        d = data["data"]
+        if "sweep_voltages" in d:  # charge sweep inside: per-bias rates are in its own file
+            print(f"  {delay:16.3f}  (charge sweep: see its file's sweep_* arrays)")
+            continue
+        period = float(d["scheduled_rep_period_us"])
+        for r in np.atleast_1d(d["read_indices"]).tolist():
+            rates = [float(d[f"ts_{name}{r}"]) for name in _SUMMARY_RATES]
+            print(
+                f"  {delay:16.3f}  {period:11.3f}  {r:4d}  {int(d[f'n_blobs{r}']):7d}  "
+                + " / ".join(f"{g:.1f}" for g in rates)
+            )
+
+
+_SUMMARY_RATES = ("gamma_mean_hz", "acf_gamma_hz", "hmm_gamma_mean_hz")
 
 
 def run_readout_optimize(ctx, SS_R_params):
