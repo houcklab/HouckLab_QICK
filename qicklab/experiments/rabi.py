@@ -300,38 +300,37 @@ class AmplitudeRabiFF(ExperimentClass):
         while plt.fignum_exists(num=figNum):
             figNum += 1
 
+        x_min, x_max = float(np.min(x_pts)), float(np.max(x_pts))
+
         fig = plt.figure(figNum)
         plt.plot(x_pts, avgi, "o", color="orange", label="I data")
         plt.plot(x_pts, avgq, "o", color="blue", label="Q data")
 
-        if fit_i is not None:
-            if "x_fit_dense" not in fit_i:
-                fit_i["x_fit_dense"] = np.linspace(np.min(x_pts), np.max(x_pts), 5000)
-                fit_i["y_fit_dense"] = cos_func(fit_i["x_fit_dense"], *fit_i["popt"])
+        for f, color, lbl in ((fit_i, "orange", "I"), (fit_q, "blue", "Q")):
+            if f is None:
+                continue
+            if "x_fit_dense" not in f:
+                f["x_fit_dense"] = np.linspace(x_min, x_max, 5000)
+                f["y_fit_dense"] = cos_func(f["x_fit_dense"], *f["popt"])
 
             plt.plot(
-                fit_i["x_fit_dense"],
-                fit_i["y_fit_dense"],
+                f["x_fit_dense"],
+                f["y_fit_dense"],
                 "-",
-                color="orange",
-                label=f"I fit, pi={fit_i['pi_gain']:.1f}",
+                color=color,
+                label=f"{lbl} fit, pi={f['pi_gain']:.1f}",
             )
-            plt.axvline(fit_i["pi_gain"], linestyle="--", color="orange", alpha=0.7)
 
-        if fit_q is not None:
-            if "x_fit_dense" not in fit_q:
-                fit_q["x_fit_dense"] = np.linspace(np.min(x_pts), np.max(x_pts), 5000)
-                fit_q["y_fit_dense"] = cos_func(fit_q["x_fit_dense"], *fit_q["popt"])
+            # A failed fit has a runaway period: hide out-of-range markers (amplitude_rabi.md).
+            if x_min <= f["pi_gain"] <= x_max:
+                plt.axvline(f["pi_gain"], linestyle="--", color=color, alpha=0.7)
+            else:
+                print(
+                    f"  [warn] {lbl} pi gain = {f['pi_gain']:.3g} outside swept range "
+                    f"[{x_min:.0f}, {x_max:.0f}] -- fit likely failed, marker hidden."
+                )
 
-            plt.plot(
-                fit_q["x_fit_dense"],
-                fit_q["y_fit_dense"],
-                "-",
-                color="blue",
-                label=f"Q fit, pi={fit_q['pi_gain']:.1f}",
-            )
-            plt.axvline(fit_q["pi_gain"], linestyle="--", color="blue", alpha=0.7)
-
+        plt.xlim(x_min, x_max)
         plt.ylabel("a.u.")
         plt.xlabel("qubit gain")
         plt.legend()

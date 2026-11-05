@@ -179,8 +179,10 @@ extremum (the 3 pi or 5 pi point) instead of `P/2`.
 - Below about 0.75 periods in the sweep the fitted period is poorly constrained even when
   the fit converges; the fit flags it (bit 4) rather than refusing.
 - A failed cosine fit (no visible oscillation) returns a runaway period; drawing its pi
-  marker would autoscale the x axis to ~1e9, so `AmplitudeRabiFF_N` hides markers that fall
-  outside the swept range and prints a warning.
+  marker would autoscale the x axis to ~1e9, so both classes hide markers that fall outside
+  the swept range, print a warning and pin the x axis to the sweep. `AmplitudeRabiFF` did not
+  until 2026-11-03 (CSTQ03_nucell Q1, AmplitudeRabi_2026_11_03_01_19_32: I fit pi = 9.2e5,
+  data squeezed against x = 0).
 - If you do not see an oscillation, raise `max_gain`, and compare with the transmission
   data (CSTQ03 runner note). `max_gain` above 32767 raises ValueError: the gain register
   would wrap it ([gains](../concepts/timing_and_units.md#gains)).
