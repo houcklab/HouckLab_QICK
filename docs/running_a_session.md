@@ -295,6 +295,26 @@ disagreed there.
 A device whose `Setup` sets `board_overrides` or `ff_qubits` is refused at connect
 (`NotImplementedError`): `build_context` does not apply them yet.
 
+### Looping over qubits
+
+```python
+run_qubit_loop(SESSION, PLAN, (1, 2, 3, 4))             # Q1, Q2, Q3, Q4, Q1, ... until Ctrl-C
+run_qubit_loop(SESSION, PLAN, (1, 2, 3, 4), cycles=3)   # three rounds
+run_qubit_loop(SESSION, PLAN, (1, 2), dry_run=True)     # one dry run per qubit, {q: report}
+```
+
+Runs the whole PLAN on one qubit, then the whole PLAN on the next, and starts the round again
+after the last one. Each visit is `run()` on the session with `qubit_readout = qubit_pulse = q`,
+so it connects again: the yoko ramps back to `bias_v`, the config starts in regime A from the
+device's numbers for q, and the yoko is closed when the visit ends. Every qubit is checked
+against the device before anything runs. The other session fields (bias, groups) are the same
+for every qubit, and so is every step's parameters. A step that raises stops the loop.
+
+Return values are not kept, so a loop that runs overnight does not fill the RAM; every step saves
+its own files. In the runner, set `LOOP_QUBITS` (and `LOOP_CYCLES`, `None` = until Ctrl-C) to
+loop the PLAN; `--dry-run` works the same way. For a looped `undriven_single_shot` step, use
+`repeat=1` (the loop does the repeating) and `plot_disp=False`.
+
 ### Dry run
 
 `dry_run=True` uses the fakes in `qicklab.core.fakes` (the same ones the regression harness

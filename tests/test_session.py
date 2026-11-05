@@ -22,7 +22,16 @@ from qicklab.core import fakes, io
 from qicklab.core.config import rebuild_singleshot_config
 from qicklab.core.context import build_context
 from qicklab.core.device import ParityParams, Qubit, Readout, ReadoutWindow, Setup, source
-from qicklab.core.session import GROUPS, REGIMES, Session, Step, connect, run, run_step
+from qicklab.core.session import (
+    GROUPS,
+    REGIMES,
+    Session,
+    Step,
+    connect,
+    run,
+    run_qubit_loop,
+    run_step,
+)
 from qicklab.runs import groups as G
 from qicklab.runs import recipes as R
 from tests.regression import capture
@@ -371,6 +380,35 @@ def test_run_closes_the_yoko_when_a_step_raises(fake_board, device):
         run(Session(device, 5, 5), [Step("boom", boom, "A")])
     log = fakes.STATE.yoko
     assert log[-1] == "CLOSE" and "MARK" in log[log.index("MARK") :]
+
+
+def test_run_qubit_loop_runs_the_plan_per_qubit_round_after_round(fake_board, device, capsys):
+    seen = []
+
+    def fn(ctx):
+        seen.append((ctx.Qubit_Readout, ctx.Qubit_Pulse))
+
+    plan = [Step("probe", fn, "A"), Step("probe_b", fn, "B")]
+    assert run_qubit_loop(Session(device, 5, 5), plan, (1, 3), cycles=2) is None
+    assert seen == [(1, 1), (1, 1), (3, 3), (3, 3)] * 2
+    assert fakes.STATE.yoko[-1] == "CLOSE"
+    out = capsys.readouterr().out
+    assert re.search(r"cycle 1/2, Q1 .*cycle 1/2, Q3 .*cycle 2/2, Q1 .*cycle 2/2, Q3 ", out, re.S)
+
+
+def test_run_qubit_loop_checks_its_qubits_before_connecting(fake_board, device):
+    with pytest.raises(KeyError, match="qubit_readout=9"):
+        run_qubit_loop(Session(device, 5, 5), [R.t1()], (1, 9), cycles=1)
+    with pytest.raises(ValueError, match="cycles"):
+        run_qubit_loop(Session(device, 5, 5), [R.t1()], (1,), cycles=0)
+
+
+def test_run_qubit_loop_dry_runs_each_qubit_once(monkeypatch, tmp_path):
+    _no_real_hardware(monkeypatch)
+    monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
+    reports = run_qubit_loop(Session(DEVICE, 5, 5), [R.t1()], (2, 5), dry_run=True)
+    assert list(reports) == [2, 5]
+    assert all(r[0]["status"] == "ok" for r in reports.values()), reports
 
 
 def test_run_rejects_a_plan_entry_that_is_not_a_step():

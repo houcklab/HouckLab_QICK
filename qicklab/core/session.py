@@ -1,4 +1,4 @@
-"""Session layer: `Session`, the `Step` a PLAN is made of, `run`, `connect`, `run_step`.
+"""Session layer: `Session`, the `Step` a PLAN is made of, `run`, `run_qubit_loop`, `connect`, `run_step`.
 
 `qicklab.runs.recipes` builds Steps; `qicklab.runs.groups` builds the shared group dicts and
 registers their library defaults here (core never imports runs). Guide:
@@ -447,6 +447,38 @@ def run(session, plan, dry_run=False):
     finally:
         ctx.yoko.close()
     return results
+
+
+def run_qubit_loop(session, plan, qubits, cycles=None, dry_run=False):
+    """Run the whole PLAN on each of `qubits` in turn (readout = pulse = q), the round `cycles` times.
+
+    One visit is `run(session with qubit_readout = qubit_pulse = q, plan)`: a fresh connect
+    (yoko ramped back to session.bias_v, regime A, the device's numbers for q), every step,
+    yoko closed. cycles=None repeats the round until Ctrl-C. Results are not kept (a long loop
+    of undriven shots would fill the RAM); every step saves its own files. dry_run=True
+    dry-runs the plan once per qubit and returns {q: report}.
+    docs/running_a_session.md#looping-over-qubits
+    """
+    plan = _check_plan(plan)
+    qubits = list(qubits)
+    if not qubits:
+        raise ValueError("run_qubit_loop: give at least one qubit")
+    if cycles is not None and int(cycles) < 1:
+        raise ValueError(f"run_qubit_loop: cycles must be >= 1 or None, got {cycles!r}")
+    # every qubit checked against the device before anything is acquired
+    sessions = {q: dataclasses.replace(session, qubit_readout=q, qubit_pulse=q) for q in qubits}
+    if dry_run:
+        return {q: _dry_run(s, plan) for q, s in sessions.items()}
+    total = "until Ctrl-C" if cycles is None else int(cycles)
+    cycle = 0
+    while cycles is None or cycle < int(cycles):
+        cycle += 1
+        for i, (q, s) in enumerate(sessions.items(), 1):
+            print(
+                f"\n[session] ===== qubit loop: cycle {cycle}/{total}, "
+                f"Q{q} ({i}/{len(sessions)}) {time.strftime('%Y-%m-%d %H:%M:%S')} ====="
+            )
+            run(s, plan)
 
 
 # --------------------------------------------------------------------------------------------
