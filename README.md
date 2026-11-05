@@ -17,7 +17,7 @@ and saves `.h5` + `.png` + `.json`. Samples are named `<chip>_<package>_fab<YYYY
 Python 3.11 or newer. Run everything from the repo root (no install step is needed):
 
 ```
-git clone -b qicklab_refactor https://github.com/houcklab/HouckLab_QICK.git
+git clone -b bfc_code https://github.com/houcklab/HouckLab_QICK.git
 cd HouckLab_QICK
 python -m venv .venv
 .venv\Scripts\activate
