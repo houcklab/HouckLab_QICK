@@ -54,7 +54,7 @@ qubit measurements (bias at the operating point, pump ON).
    setpoint is discarded, never applied as a step). Output on in current mode: the setpoint is
    kept and the ramp starts from it (`:SOUR:RANG?` is read; the range is changed only at 0 A).
    Output on in voltage mode: the script stops without writing. Details:
-   [hardware](../hardware.md#bias-gs200-at-gpib1112instr-current-mode).
+   [hardware](../hardware.md#bias-gs200-at-gpib112instr-current-mode).
 2. `flux_sweep` ends by ramping the bias back to 0 (only once the YOKO is in current mode with
    its output on), so it runs before `set_bias`, never after it.
 3. `pump_sweep` disables the pump RF on exit (success, exception or Ctrl-C); if that and
