@@ -388,7 +388,7 @@ def test_gain_compare_unconfirmed_pump_off_is_logged_unknown(
 
 def test_set_pump_on_flag_overrides_disable_default_and_logs(env, monkeypatch):
     mod = importlib.import_module("qicklab.twpa.set_pump")
-    assert mod.DISABLE_PUMP is True  # the committed default turns the pump off
+    monkeypatch.setattr(mod, "DISABLE_PUMP", True)  # the lab default varies; pin the off path
     mod.main()
     assert FakeSynth.instances[-1].closed
     assert read_log(env.state_dir)[-1]["action"] == "pump_off"
@@ -472,6 +472,7 @@ def test_gain_compare_failed_synth_setup_is_logged(env, monkeypatch, capsys, fau
 
 def test_set_pump_failed_connect_is_logged_unknown(env, monkeypatch):
     mod = importlib.import_module("qicklab.twpa.set_pump")
+    monkeypatch.setattr(mod, "DISABLE_PUMP", True)  # bare argv takes the off path
     monkeypatch.setattr(mod, "SynthHD", _broken_synth)
     for argv, action in ((["prog"], "pump_off"), (["prog", "--on"], "pump_on")):
         monkeypatch.setattr(sys, "argv", argv)
@@ -486,6 +487,7 @@ def test_set_pump_failed_connect_is_logged_unknown(env, monkeypatch):
 
 def test_set_pump_off_path_close_error_still_logs_off(env, monkeypatch):
     mod = importlib.import_module("qicklab.twpa.set_pump")
+    monkeypatch.setattr(mod, "DISABLE_PUMP", True)  # bare argv takes the off path
     real_close = FakeSynth.close
 
     def bad_close(self):

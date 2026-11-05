@@ -27,7 +27,7 @@ N_F, N_P = 7, 5  # pump grid used by the tests (rows = pump frequency, columns =
 I0, J0 = 2, 2  # injected optimum
 G0 = 10.0  # peak gain (dB)
 DRIFT_DB = 0.5  # baseline drift per PNA-X measurement (dB)
-N_SIG = 21  # PNA-X points across the band (the committed PNAX_N_FREQ_POINTS)
+N_SIG = 21  # PNA-X points across the band (pinned on the module by the fixture)
 SHAPE = 1.0 + 0.2 * np.cos(2 * np.pi * np.arange(N_SIG) / 20.0)  # gain ripple across the band
 
 
@@ -101,6 +101,7 @@ def ps(monkeypatch, tmp_path):
     monkeypatch.setattr("qicklab.twpa.common.TWPA_STATE_DIR", str(tmp_path / "state"))
     monkeypatch.setattr(mod, "N_FREQ_POINTS", N_F)
     monkeypatch.setattr(mod, "N_POWER_POINTS", N_P)
+    monkeypatch.setattr(mod, "PNAX_N_FREQ_POINTS", N_SIG)
     monkeypatch.setattr(mod, "SAVE_DIR", str(tmp_path))
     rm = types.SimpleNamespace(open_resource=lambda a: yoko if a == TWPA_YOKO_ADDRESS else pnax)
     monkeypatch.setattr(mod.pyvisa, "ResourceManager", lambda: rm)

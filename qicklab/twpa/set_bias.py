@@ -21,7 +21,7 @@ from qicklab.twpa.common import append_state, read_bias_state
 # (the charge-line opener refuses this address).
 TWPA_YOKO_ADDRESS = _hw_yoko.TWPA_YOKO_ADDRESS
 
-TARGET_CURRENT_uA = 0  # datasheet nominal ≈ 11 uA; history in docs/experiments/twpa.md
+TARGET_CURRENT_uA = 13  # datasheet nominal ≈ 11 uA; history in docs/experiments/twpa.md
 MAX_RATE_nA_per_s = 300.0  # datasheet ceiling — do not raise
 
 SAFETY_CAP_uA = 25.0  # script refuses targets above this in normal operation

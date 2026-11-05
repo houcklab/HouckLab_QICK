@@ -38,7 +38,7 @@ PNAX_F_STOP_HZ = 8e9
 PNAX_N_FREQ_POINTS = 201  # points across the band (BAND mode only)
 PNAX_IF_BW_HZ = 100.0
 PNAX_POWER_dBm = -25.0  # keep low: TWPA is unbiased much of the sweep
-PNAX_N_AVG = 4  # sweep-averaging count (1 = off)
+PNAX_N_AVG = 10  # sweep-averaging count (1 = off)
 PNAX_TIMEOUT_MS = 30000
 
 SAVE_DIR = TWPA_STATE_DIR  # this cooldown's TWPA folder (set in qicklab.twpa.common)

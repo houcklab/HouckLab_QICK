@@ -30,8 +30,8 @@ DEVICE = Device(
             yoko_addr="GPIB1::12::INSTR",
             synth_port="COM5",
             pnax_addr="GPIB0::16::INSTR",
-            pump=(10.7165, -5.5, 1),  # 2026-10-01 point; recalibrate (docs/experiments/twpa.md)
-            bias_ua=0,  # set after this cooldown's flux_sweep
+            pump=(10.7070, -1, 0),  # 2026-10-01 point; recalibrate (docs/experiments/twpa.md)
+            bias_ua=13,  # set after this cooldown's flux_sweep
         ),
     ),
     # 2026-10-29: all values below are the 2026-10-01 CSTQ03 ones, not measured on this sample

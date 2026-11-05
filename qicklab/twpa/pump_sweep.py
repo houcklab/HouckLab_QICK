@@ -28,14 +28,14 @@ from qicklab.twpa.common import (
 )
 
 PUMP_SYNTH_PORT = "COM5"  # SynthHD USB/serial COM port
-PUMP_CHANNELS = [1]  # SynthHD channels to drive identically
+PUMP_CHANNELS = [0]  # SynthHD channels to drive identically
 
-F_START_GHz = 10.7
-F_STOP_GHz = 10.73
-N_FREQ_POINTS = 401
+F_START_GHz = 10.65
+F_STOP_GHz = 10.75
+N_FREQ_POINTS = 301
 
-P_START_dBm = -10
-P_STOP_dBm = 0
+P_START_dBm = -5
+P_STOP_dBm = 5
 N_POWER_POINTS = 21
 PUMP_POWER_MAX_dBm = 20.0  # hard ceiling — script refuses P > this
 
@@ -50,10 +50,10 @@ PNAX_MEAS_MODE = "BAND"
 PNAX_CW_FREQ_HZ = 7.0e9  # CW tone (used only when PNAX_MEAS_MODE == "CW")
 PNAX_F_START_HZ = 6e9
 PNAX_F_STOP_HZ = 8e9
-PNAX_N_FREQ_POINTS = 21  # points across the band (BAND mode only)
+PNAX_N_FREQ_POINTS = 31  # points across the band (BAND mode only)
 PNAX_IF_BW_HZ = 500.0
 PNAX_POWER_dBm = -25.0  # keep low — the TWPA may be under-pumped at start
-PNAX_N_AVG = 100  # sweep-averaging count (1 = off)
+PNAX_N_AVG = 20  # sweep-averaging count (1 = off)
 PNAX_TIMEOUT_MS = 30000  # floor of the estimated VISA timeout
 
 SAVE_DIR = TWPA_STATE_DIR  # this cooldown's TWPA folder (set in qicklab.twpa.common)

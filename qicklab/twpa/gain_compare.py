@@ -24,11 +24,11 @@ from qicklab.twpa.common import (
 )
 
 PUMP_SYNTH_PORT = "COM5"  # SynthHD USB/serial COM port
-PUMP_CHANNELS = [1]  # SynthHD channels to drive identically
+PUMP_CHANNELS = [0]  # SynthHD channels to drive identically
 
 # Pump ON operating point (the optimum from qicklab.twpa.pump_sweep for this band).
-PUMP_ON_FREQ_GHz = 10.7165
-PUMP_ON_POWER_dBm = -5.5  # per channel, identical
+PUMP_ON_FREQ_GHz = 10.7070
+PUMP_ON_POWER_dBm = -1  # per channel, identical
 PUMP_POWER_MAX_dBm = 0.0  # hard ceiling — script refuses ON power above this
 # After a run that completes, leave the pump ON at the ON point and the SynthHD port open (as
 # set_pump does; closing switches RF off). Ctrl-C or an error always switches the pump off.
@@ -37,9 +37,9 @@ LEAVE_PUMP_ON = True
 
 F_SIGNAL_START_GHz = 2.0
 F_SIGNAL_STOP_GHz = 10.0
-N_SIGNAL_POINTS = 401  # PNA-X linear-sweep points across the band
+N_SIGNAL_POINTS = 1001  # PNA-X linear-sweep points across the band
 
-N_REPEATS = 10  # OFF/ON trace pairs to average (drift suppression)
+N_REPEATS = 100  # OFF/ON trace pairs to average (drift suppression)
 SETTLE_AFTER_PUMP_S = 0.30  # PLL lock + thermal settle after toggling pump state
 
 PNAX_ADDRESS = "GPIB0::16::INSTR"

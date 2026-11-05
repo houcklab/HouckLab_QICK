@@ -14,11 +14,12 @@ PUMP_SYNTH_PORT = "COM5"  # SynthHD USB/serial COM port
 
 # One (freq_GHz, power_dBm) per SynthHD channel.
 PUMP_SETTINGS = {
-    1: (10.7165, -5.5),
+    0: (10.7070, -1),
+    # 1: (10.7165, -5.5), # early Oct cooldown
 }
 PUMP_POWER_MAX_dBm = 0.0  # hard ceiling — script refuses power above this
 
-DISABLE_PUMP = True  # True (or pass '--off') to RF-disable the pump and exit; '--on' overrides it
+DISABLE_PUMP = False  # True (or pass '--off') to RF-disable the pump and exit; '--on' overrides it
 
 
 def set_pump_channels(synth, settings, rf_enable):
