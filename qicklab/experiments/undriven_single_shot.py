@@ -13,6 +13,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from qick import AveragerProgram
 
+from qicklab.analysis.telegraph_trace import pick_trace_window, trace_point_quality
 from qicklab.analysis.undriven import (
     analyze_undriven_cloud,
     analyze_undriven_timeseries,
@@ -255,6 +256,186 @@ def _disk_layout(payload):
                 datasets.pop(alias)
                 links[alias] = links.get(target, target)
     return datasets, links
+
+
+# Showcase trace figure (`<data>_trace.png`): slide palette, slide width.
+_TRACE_WINDOW_MS = 20.0
+_TRACE_SMOOTH_US = 250.0
+_TRACE_MAX_SHOTS = 1_000_000
+_C_TEXT, _C_SEC, _C_LIGHT = "#3F3F3F", "#6E6E6E", "#9A9A9A"
+_C_ORANGE, _C_BROWN, _C_SLATE, _C_PEACH = "#D78835", "#B05E37", "#3D6B9E", "#F8E6D0"
+
+
+def _trace_rc():
+    """rcParams of the trace figure; Libre Franklin when installed, matplotlib's default otherwise."""
+    from matplotlib import font_manager
+
+    rc = {
+        "text.color": _C_TEXT,
+        "axes.labelcolor": _C_TEXT,
+        "xtick.color": _C_TEXT,
+        "ytick.color": _C_TEXT,
+        "axes.edgecolor": _C_SEC,
+        "axes.spines.top": False,
+        "axes.spines.right": False,
+        "xtick.labelsize": 14,
+        "ytick.labelsize": 14,
+        "axes.labelsize": 16,
+        "axes.formatter.useoffset": False,
+    }
+    if "Libre Franklin" in {f.name for f in font_manager.fontManager.ttflist}:
+        rc.update(
+            {
+                "font.family": "Libre Franklin",
+                "mathtext.fontset": "custom",
+                "mathtext.rm": "Libre Franklin",
+                "mathtext.it": "Libre Franklin:italic",
+                "mathtext.bf": "Libre Franklin:semibold",
+                "mathtext.fallback": "stixsans",
+            }
+        )
+    return rc
+
+
+def _trace_inputs(d, prefix, tag):
+    """(i, q, t_us) raw shots of one bias / read, from the in-memory dict or a loaded h5."""
+    i = d.get(prefix + "i_raw" + tag, d.get(prefix + "i" + tag))
+    q = d.get(prefix + "q_raw" + tag, d.get(prefix + "q" + tag))
+    if i is None or q is None:
+        return None
+    i, q = np.asarray(i), np.asarray(q)
+    t = d.get(prefix + "shot_time_us" + tag, d.get(prefix + "shot_time_us"))
+    if t is None or np.asarray(t).size != i.size:
+        period = float(
+            np.asarray(
+                d.get(prefix + "scheduled_rep_period_us", d.get("scheduled_rep_period_us", np.nan))
+            )
+        )
+        t = np.arange(i.size) * period
+    return i, q, np.asarray(t)
+
+
+def plot_trace_figure(quality, window, path, title, subtitle, footer):
+    """IQ histogram | `window` of the gated record | projection histogram, saved to `path`.
+
+    `quality` is a trace_point_quality() result, `window` a pick_trace_window() result.
+    """
+    from matplotlib import patheffects
+    from matplotlib.colors import LinearSegmentedColormap
+
+    i, q, t, keep, z = quality["i"], quality["q"], quality["t_us"], quality["keep"], quality["z"]
+    center, axis = quality["center"], quality["axis"]
+    zlo, zhi = quality["means_z"]
+    sd, w = quality["sigmas_z"], quality["weights"]
+    s0, n_win, k = window["start"], window["n_shots"], window["smooth_shots"]
+    sig_iq, mid_iq = quality["proj_sigma"], quality["proj_mid"]
+    cmap = LinearSegmentedColormap.from_list(
+        "trace", ["#FFFFFF", _C_PEACH, _C_ORANGE, _C_BROWN, "#4A2A14"]
+    )
+    ylim = (zlo - 3.6, zhi + 3.6)
+
+    with plt.rc_context(_trace_rc()):
+        fig = plt.figure(figsize=(13.333, 5.0))
+
+        a1 = fig.add_axes([0.08, 0.2, 0.215, 0.575])
+        ik, qk = i[keep] - center[0], q[keep] - center[1]
+        half = max(
+            np.percentile(np.abs(np.r_[ik, qk]), 99.7), abs(mid_iq) + (abs(zlo) + 3.6) * sig_iq
+        )
+        h, _, _ = np.histogram2d(ik, qk, bins=140, range=[[-half, half], [-half, half]])
+        a1.imshow(
+            h.T,
+            origin="lower",
+            extent=[-half, half, -half, half],
+            cmap=cmap,
+            vmin=0,
+            vmax=max(np.percentile(h[h > 0], 99), 1) if np.any(h > 0) else 1,
+            interpolation="nearest",
+            rasterized=True,
+        )
+        for m_z, col in ((zlo, _C_SLATE), (zhi, _C_BROWN)):
+            m = mid_iq + m_z * sig_iq  # blob mean on the axis, measured from center
+            a1.plot(m * axis[0], m * axis[1], "o", ms=9, mfc=col, mec="white", mew=1.8)
+        a1.set_xlabel(r"$I - I_0$ (a.u.)")
+        a1.set_ylabel(r"$Q - Q_0$ (a.u.)", labelpad=2)
+        a1.set_title("IQ, gated shots", fontsize=15, color=_C_SEC, pad=8)
+        a1.set_aspect("equal")
+        a1.locator_params(nbins=4)
+
+        a2 = fig.add_axes([0.375, 0.2, 0.455, 0.575])
+        sl = slice(s0, s0 + n_win)
+        tt = (t[sl] - t[s0]) * 1e-3
+        a2.axhline(zlo, color=_C_SLATE, ls=(0, (5, 4)), lw=1.4)
+        a2.axhline(zhi, color=_C_BROWN, ls=(0, (5, 4)), lw=1.4)
+        a2.plot(tt, z[sl], "o", ms=3.2, mfc=_C_LIGHT, mec="none", alpha=0.75, rasterized=True)
+        a2.plot(
+            tt,
+            window["smoothed"][sl],
+            color=_C_ORANGE,
+            lw=2.2,
+            path_effects=[
+                patheffects.Stroke(linewidth=5, foreground="white"),
+                patheffects.Normal(),
+            ],
+        )
+        win_ms = float(n_win * np.median(np.diff(t[sl])) * 1e-3) if n_win > 1 else 1.0
+        a2.set_xlim(0, round(win_ms))
+        a2.set_xticks(np.arange(0, round(win_ms) + 0.1, 5))
+        a2.set_ylim(*ylim)
+        a2.set_xlabel("time (ms)")
+        a2.set_ylabel(r"projection ($\sigma$)")
+        a2.set_title(
+            f"{round(win_ms)} ms of the record",
+            fontsize=15,
+            color=_C_SEC,
+            pad=8,
+        )
+
+        a3 = fig.add_axes([0.85, 0.2, 0.13, 0.575], sharey=a2)
+        hb = np.linspace(*ylim, 121)
+        hh, _ = np.histogram(z[keep], hb, density=True)
+        a3.fill_betweenx(0.5 * (hb[1:] + hb[:-1]), 0, hh, color=_C_PEACH, step="mid", lw=0)
+        yy = np.linspace(*ylim, 600)
+        tot = np.zeros_like(yy)
+        for m_z, s_z, w_, col in zip((zlo, zhi), sd, w, (_C_SLATE, _C_BROWN)):
+            g = w_ * np.exp(-0.5 * ((yy - m_z) / s_z) ** 2) / (s_z * np.sqrt(2 * np.pi))
+            tot += g
+            a3.plot(g, yy, color=col, lw=2.0)
+        a3.plot(tot, yy, color=_C_TEXT, lw=1.0, ls=(0, (2, 2)))
+        xmax = max(hh.max(), tot.max()) * 1.15
+        a3.set_xlim(0, xmax)
+        for m_z, w_, off, col in ((zlo, w[0], -2.3, _C_SLATE), (zhi, w[1], 2.3, _C_BROWN)):
+            a3.text(
+                xmax * 0.5,
+                m_z + off,
+                f"P = {w_:.2f}",
+                ha="center",
+                va="center",
+                fontsize=14,
+                color=_C_TEXT,
+                bbox=dict(boxstyle="round,pad=0.25", fc="white", ec=col, lw=1.4),
+            )
+        a3.set_xticks([])
+        a3.set_xlabel("shots", labelpad=10)
+        plt.setp(a3.get_yticklabels(), visible=False)
+        a3.set_title("histogram", fontsize=15, color=_C_SEC, pad=8)
+
+        footer = f"grey: single shots, orange: {k}-shot moving average  ·  " + footer
+        texts = (
+            fig.text(0.045, 0.945, title, fontsize=20, fontweight="semibold", va="center"),
+            fig.text(0.045, 0.875, subtitle, fontsize=15, color=_C_SEC, va="center"),
+            fig.text(0.045, 0.03, footer, fontsize=11, color=_C_LIGHT, va="center"),
+        )
+        # shrink a header line that would run off the right edge (wider fallback fonts)
+        renderer = fig.canvas.get_renderer()
+        for txt in texts:
+            while txt.get_fontsize() > 9:
+                right = txt.get_window_extent(renderer).x1 / (fig.dpi * fig.get_figwidth())
+                if right <= 0.985:
+                    break
+                txt.set_fontsize(txt.get_fontsize() - 0.5)
+        fig.savefig(path, dpi=300)
+        plt.close(fig)
 
 
 class UndrivenSingleShot(ExperimentClass):
@@ -805,6 +986,7 @@ class UndrivenSingleShot(ExperimentClass):
         )
         fig.tight_layout(rect=(0, 0, 1, 0.955))
         plt.savefig(self.iname)
+        self._save_trace_figures(d)
 
         if plotDisp:
             plt.show(block=True)
@@ -855,12 +1037,105 @@ class UndrivenSingleShot(ExperimentClass):
         )
         fig.tight_layout(rect=(0, 0, 1, 0.94))
         plt.savefig(self.iname)
+        self._save_trace_figures(d)
 
         if plotDisp:
             plt.show(block=True)
             plt.pause(0.1)
         else:
             plt.close(fig)
+
+    def _save_trace_figures(self, d):
+        """Save `<data>_trace.png` (one per read: `_trace_read<r>.png` with several reads).
+
+        For a charge sweep the bias with the best separation x population balance is shown.
+        Never raises and sets no attribute: a failure only prints, the run goes on.
+        """
+        try:
+            reads = [str(int(r)) for r in np.atleast_1d(d["read_indices"])]
+            if "sweep_voltages" in d:
+                volts = np.asarray(d["sweep_voltages"], dtype=float)
+                points = [(f"V{k}_", float(v)) for k, v in enumerate(volts)]
+                print(f"[UndrivenSingleShot] trace figure: scoring {len(points)} biases")
+            else:
+                points = [("", None)]
+            qubit = re.search(r"[\\/](Q\d+)[\\/]", str(self.iname))
+            stamp = re.search(r"(\d{4})_(\d\d)_(\d\d)_(\d\d)_(\d\d)_(\d\d)", str(self.titlename))
+            when = (
+                f"{stamp[1]}-{stamp[2]}-{stamp[3]} {stamp[4]}:{stamp[5]}:{stamp[6]}"
+                if stamp
+                else str(self.titlename)
+            )
+            for tag in reads:
+                best, best_k = None, None
+                for k, (prefix, _) in enumerate(points):
+                    shots = _trace_inputs(d, prefix, tag)
+                    if shots is None:
+                        continue
+                    qual = trace_point_quality(*shots, max_shots=_TRACE_MAX_SHOTS)
+                    if best is None or qual["score"] > best["score"]:
+                        best, best_k = qual, k
+                if best is None or not np.isfinite(best["separation_sigma"]):
+                    print(f"[UndrivenSingleShot] trace figure skipped for read {tag}: no blob fit")
+                    continue
+                win = pick_trace_window(
+                    best["t_us"],
+                    best["z"],
+                    best["keep"],
+                    best["separation_sigma"],
+                    window_ms=_TRACE_WINDOW_MS,
+                    smooth_us=_TRACE_SMOOTH_US,
+                )
+                if win["start"] is None:
+                    print(
+                        f"[UndrivenSingleShot] trace figure skipped for read {tag}: "
+                        f"no {_TRACE_WINDOW_MS:g} ms window of kept shots"
+                    )
+                    continue
+                prefix, volt = points[best_k]
+                n_total = _trace_inputs(d, prefix, tag)[0].size
+                bits = [
+                    f"{qubit[1]} undriven single shot" if qubit else "undriven single shot",
+                    when,
+                ]
+                if volt is not None:
+                    bits.append(f"charge bias {volt * 1e3:.4g} mV")
+                bits.append(f"shot period {best['dt_us']:.1f} µs")
+                w = best["weights"]
+                gate = (
+                    f"{best['f0_hz']:.2f} Hz readout dropout gated out: "
+                    f"{100 * best['kept_fraction']:.0f}% of shots kept"
+                    if best["modulated"]
+                    else "no readout dropout detected, all shots used"
+                )
+                subtitle = (
+                    f"separation {best['separation_sigma']:.2f}"
+                    + r"$\,\sigma$"
+                    + f"  ·  populations {w[0]:.2f} / {w[1]:.2f}  ·  {gate}"
+                )
+                where = f"bias {best_k}  ·  " if volt is not None else ""
+                used = (
+                    f"{n_total:,} shots"
+                    if best["n_used"] == n_total
+                    else f"first {best['n_used']:,} of {n_total:,} shots"
+                )
+                footer = (
+                    f"{self.titlename}  ·  read {tag}  ·  {where}{used}  ·  "
+                    f"window at {best['t_us'][win['start']] * 1e-6:.3f} s"
+                )
+                stem = (
+                    str(self.iname)[: -len(".png")]
+                    if str(self.iname).endswith(".png")
+                    else str(self.iname)
+                )
+                path = stem + ("_trace.png" if len(reads) == 1 else f"_trace_read{tag}.png")
+                plot_trace_figure(best, win, path, "  ·  ".join(bits), subtitle, footer)
+                print(
+                    f"[UndrivenSingleShot] trace figure: {path} ({where}separation "
+                    f"{best['separation_sigma']:.2f} sigma, populations {w[0]:.2f}/{w[1]:.2f})"
+                )
+        except Exception as err:  # the trace is a by-product: never fail the run over it
+            print(f"[UndrivenSingleShot] trace figure skipped: {err!r}")
 
     def _plot_timeseries(self, ax, d, tag, read_index, n_avg, rep_period_us, max_points):
         t_avg_us = np.asarray(d.get("ts_time_us" + tag, np.zeros(0)))

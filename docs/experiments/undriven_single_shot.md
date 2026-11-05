@@ -34,7 +34,8 @@ also a uniformly sampled **time series**. The step projects it onto the blob axi
 and measures how it hops between blobs (dwell times, rates, autocorrelation), the
 same way [modified_ramsey](modified_ramsey.md) treats parity. Optionally it repeats
 all of this at each point of a yoko charge-bias sweep. Code: see
-`qicklab.experiments.undriven_single_shot` and `qicklab.analysis.undriven`.
+`qicklab.experiments.undriven_single_shot`, `qicklab.analysis.undriven` and (the trace
+png) `qicklab.analysis.telegraph_trace`.
 
 ## Pulse sequence
 
@@ -181,7 +182,21 @@ ragged list) raises `TypeError` naming the key and nothing is written.
   (3 tries on the [stale-shot-counter race](../concepts/averaging.md#the-stale-shot-counter-race)).
 - **png:** the IQ cloud with blob fit, the time series between blobs, and the
   rate-vs-averaging panel; for a sweep, summary scalars vs voltage.
-- All fit results are saved to the h5. Nothing lives only in the plot.
+- **trace png** (`..._data_trace.png`, `..._data_trace_read<r>.png` with several reads): a
+  slide-width showcase of the telegraph signal. Panels: IQ histogram of the shots used, 20 ms
+  of the record (single shots and a 250 µs moving average), and the projection histogram with
+  the two fitted Gaussians and their populations.
+  - Charge sweep: the bias with the highest separation × 4·w0·w1 (separation weighted by
+    population balance) is shown; the run prints which.
+  - Uses the first 1e6 raw shots of each point. A periodic readout-gain dropout (a 1.5-2.5 Hz
+    line in the binned |IQ|, as on 2026-11-04) is gated out first: only the full-gain phase is
+    used, and the subtitle says how much was kept.
+  - The axis and blob fit here are re-done on the gated shots
+    (`qicklab.analysis.telegraph_trace`), so its separation can differ from the h5 values,
+    which are fitted on every shot. Nothing from the trace is saved to the h5.
+  - Written by `display()` after the main png; a failure there only prints a line.
+- All fit results are saved to the h5. The only numbers that live in a plot alone are the
+  trace png's gated re-fit (separation, populations, kept fraction).
 
 ## Analysis
 

@@ -21,7 +21,7 @@ qicklab/
   core/         experiment (ExperimentClass), device, context, config, session, params,
                 acquisition, readout, active_reset, schedule, io, fakes
   analysis/     iq, fitting, spectroscopy, ramsey, readout, plotting, hmm, rates, dwell,
-                undriven, modified_ramsey, zero_span, zero_span_checks
+                undriven, telegraph_trace, modified_ramsey, zero_span, zero_span_checks
   experiments/  one module per experiment family (QICK program + ExperimentClass subclass)
   runs/         run functions (one per step); groups.py (session groups, G); recipes.py
                 (step recipes, R, and the STEPS registry)
