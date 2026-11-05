@@ -10,7 +10,7 @@ Where code and a page disagree, the code wins and the page needs a fix. The para
 
 Work through 1-9 once. After that, use 10-14 as reference. 15 is for people who change the code.
 
-1. **Quickstart** ([the quick start in the top-level README](../README.md#quick-start), then [the session file](running_a_session.md#the-session-file) and [Running](running_a_session.md#running)): write a short plan, run it with `dry_run=True` (every program compiles against fake hardware, nothing plays), then run it on the board.
+1. **[Your first session](getting_started.md)** (or, in brief, [the quick start in the top-level README](../README.md#quick-start), then [the session file](running_a_session.md#the-session-file) and [Running](running_a_session.md#running)): install, write a short plan, run it with `dry_run=True` (every program compiles against fake hardware, nothing plays), then run it on the board and find the data.
 2. **[Config regimes](concepts/config_regimes.md)**: why every step sees one of two config dicts, what is lost when the plan switches between them, and why `qubit_gain` means two different things.
 3. **[Readout window](concepts/readout_window.md)**: `length = adc_trig_offset + readout_length`, the three separate windows, SNR vs T1, clock rounding.
 4. **[Averaging](concepts/averaging.md)**: `reps`, `rounds`, `shots`, `soft_avgs`, `repetitions`, `repeat`, `num_cycles`, `cycles`; why to prefer `reps`.
@@ -26,7 +26,9 @@ Work through 1-9 once. After that, use 10-14 as reference. 15 is for people who 
 14. **[Hardware](hardware.md)**: RFSoC endpoint and channel map, trigger pin, yokos, TWPA instruments, attenuator, data paths.
 15. **[Architecture](architecture.md)** (developers): package layout and layering, the parameter registry and generated docs, regression harness, QICK facts the code relies on.
 
-Device pages: [devices/](devices/) (one per chip and cooldown, e.g. CSTQ03).
+Device pages, one per chip: [CSTQ03](devices/CSTQ03.md).
+
+These pages also build into a website with search, light and dark themes and hover definitions of the jargon: its [home page](index.md) sorts them by what you are trying to do. Build it with `mkdocs serve` ([how](getting_started.md#browse-the-docs-as-a-website)).
 
 ## Conventions used in these pages
 

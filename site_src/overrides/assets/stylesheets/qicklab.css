@@ -1,0 +1,285 @@
+/* qicklab documentation theme.
+ *
+ * Charcoal header with Princeton orange as the accent. Every text colour below meets WCAG AA
+ * (4.5:1) on its background: links are a darker orange in light mode (#a84f00, 5.6:1 on white)
+ * and a lighter one in dark mode (#ffab5c, about 8:1 on the slate background). Pure Princeton
+ * orange (#e77500) is used only for decoration (rules, the active-tab bar, icons), where 3:1 is
+ * enough.
+ */
+
+:root {
+  --qk-orange: #e77500;
+  --qk-radius: 0.5rem;
+}
+
+/* ---------- colour schemes ---------- */
+
+[data-md-color-scheme="default"] {
+  --md-primary-fg-color: #23272e;
+  --md-primary-fg-color--light: #3a414b;
+  --md-primary-fg-color--dark: #16191d;
+  --md-primary-bg-color: #ffffff;
+  --md-primary-bg-color--light: rgba(255, 255, 255, 0.75);
+  --md-accent-fg-color: #b85700;
+  --md-accent-fg-color--transparent: rgba(231, 117, 0, 0.1);
+  --md-typeset-a-color: #a84f00;
+  --md-code-bg-color: #f4f5f7;
+  --qk-card-bg: #ffffff;
+  --qk-hero-bg: linear-gradient(135deg, #fff6ed 0%, #ffffff 60%);
+  --qk-flow-bg: #fafafa;
+}
+
+[data-md-color-scheme="slate"] {
+  --md-hue: 215;
+  --md-primary-fg-color: #16191d;
+  --md-primary-fg-color--light: #2a2f36;
+  --md-primary-fg-color--dark: #0e1013;
+  --md-primary-bg-color: #f2f3f5;
+  --md-accent-fg-color: #ffb870;
+  --md-accent-fg-color--transparent: rgba(255, 169, 77, 0.12);
+  --md-typeset-a-color: #ffab5c;
+  --qk-card-bg: hsla(var(--md-hue), 15%, 18%, 1);
+  --qk-hero-bg: linear-gradient(135deg, hsla(28, 60%, 18%, 0.55) 0%, transparent 65%);
+  --qk-flow-bg: hsla(var(--md-hue), 15%, 16%, 1);
+}
+
+/* ---------- header and tabs ---------- */
+
+.md-header {
+  box-shadow: none;
+}
+
+.md-tabs {
+  border-bottom: 3px solid var(--qk-orange);
+}
+
+.md-tabs__link {
+  font-size: 0.72rem;
+  opacity: 0.85;
+}
+
+.md-tabs__item--active .md-tabs__link {
+  opacity: 1;
+  font-weight: 700;
+}
+
+/* ---------- reading comfort ---------- */
+
+.md-typeset {
+  line-height: 1.7;
+}
+
+.md-typeset h1 {
+  font-weight: 700;
+  color: var(--md-default-fg-color);
+  letter-spacing: -0.01em;
+}
+
+.md-typeset h2 {
+  font-weight: 700;
+  padding-bottom: 0.25em;
+  border-bottom: 1px solid var(--md-default-fg-color--lightest);
+}
+
+.md-typeset h3 {
+  font-weight: 600;
+}
+
+/* Material shrinks tables to 0.64rem; the parameter tables are read closely, so keep them larger */
+.md-typeset table:not([class]) {
+  font-size: 0.72rem;
+}
+
+.md-typeset table:not([class]) th {
+  background-color: var(--md-default-fg-color--lightest);
+}
+
+.md-typeset table:not([class]) td,
+.md-typeset table:not([class]) th {
+  padding: 0.6em 0.9em;
+}
+
+/* Material lets code break between any two letters ("relax_dela / y"). In tables, break code only
+ * where it would otherwise overflow, and never inside a name in the first (keyword) column; a
+ * table too wide for the page scrolls sideways instead. */
+.md-typeset table:not([class]) td code {
+  word-break: normal;
+  overflow-wrap: break-word;
+}
+
+.md-typeset table:not([class]) td:first-child code {
+  white-space: nowrap;
+}
+
+/* Material sets admonitions in 0.64rem, smaller than the text around them; keep them readable */
+.md-typeset .admonition,
+.md-typeset details {
+  font-size: 0.74rem;
+}
+
+/* inline code that is a link to the source on GitHub (site_src/hooks.py) */
+.md-typeset a.qk-src > code {
+  color: var(--md-typeset-a-color);
+  text-decoration: underline dotted;
+  text-underline-offset: 0.2em;
+}
+
+.md-typeset a.qk-src::after {
+  content: "\2197"; /* north-east arrow: leaves the site */
+  font-size: 0.7em;
+  margin-left: 0.1em;
+  vertical-align: super;
+  color: var(--md-default-fg-color--light);
+}
+
+/* hover-glossary terms (abbr): a calm dotted underline, not a busy one */
+.md-typeset abbr {
+  text-decoration: underline dotted var(--md-default-fg-color--light);
+  text-underline-offset: 0.2em;
+  border-bottom: none;
+}
+
+/* keyboard keys */
+.md-typeset kbd {
+  font-size: 0.8em;
+}
+
+/* ---------- home page ---------- */
+
+.qk-hero {
+  margin: 0 0 2rem;
+  padding: 2.2rem 2rem 1.8rem;
+  border-radius: var(--qk-radius);
+  background: var(--qk-hero-bg);
+  border: 1px solid var(--md-default-fg-color--lightest);
+}
+
+.md-typeset .qk-hero h1 {
+  margin: 0 0 0.4rem;
+  font-size: 2.4rem;
+  line-height: 1.1;
+}
+
+.md-typeset .qk-hero .qk-tagline {
+  margin: 0 0 0.6rem;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--md-default-fg-color);
+}
+
+.md-typeset .qk-hero p {
+  max-width: 42rem;
+}
+
+.md-typeset .qk-hero .md-button {
+  margin: 0.5rem 0.6rem 0 0;
+}
+
+/* Buttons. Material draws them in the primary colour, which in dark mode is the near-black
+ * header colour: invisible on the dark page. Give both schemes explicit, high-contrast buttons. */
+[data-md-color-scheme="default"] .md-typeset .md-button {
+  color: #23272e;
+  border-color: #23272e;
+}
+
+[data-md-color-scheme="default"] .md-typeset .md-button--primary {
+  color: #ffffff;
+  background-color: #23272e;
+}
+
+[data-md-color-scheme="slate"] .md-typeset .md-button {
+  color: #f2f3f5;
+  border-color: hsla(var(--md-hue), 15%, 75%, 0.6);
+}
+
+[data-md-color-scheme="slate"] .md-typeset .md-button--primary {
+  color: #16191d; /* 9:1 on the orange */
+  background-color: #ffa94d;
+  border-color: #ffa94d;
+}
+
+.md-typeset .md-button:focus,
+.md-typeset .md-button:hover {
+  color: #ffffff;
+  background-color: #a84f00;
+  border-color: #a84f00;
+}
+
+[data-md-color-scheme="slate"] .md-typeset .md-button:focus,
+[data-md-color-scheme="slate"] .md-typeset .md-button:hover {
+  color: #16191d;
+  background-color: #ffc285;
+  border-color: #ffc285;
+}
+
+.md-typeset .grid.cards > ul > li,
+.md-typeset .grid.cards > ol > li {
+  background-color: var(--qk-card-bg);
+  border-radius: var(--qk-radius);
+}
+
+.md-typeset .grid.cards .lg {
+  color: var(--qk-orange);
+}
+
+/* the "how the pieces fit" strip: five boxes and arrows, stacked on a phone */
+.qk-flow {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 1.6rem;
+  margin: 1rem 0 1.5rem;
+}
+
+.qk-flow > div {
+  position: relative;
+  padding: 0.8rem 0.9rem;
+  border-radius: var(--qk-radius);
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-top: 3px solid var(--qk-orange);
+  background: var(--qk-flow-bg);
+  font-size: 0.68rem;
+  line-height: 1.5;
+}
+
+.md-typeset .qk-flow > div p {
+  margin: 0.3em 0;
+}
+
+.md-typeset .qk-flow > div p:first-child {
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.qk-flow > div:not(:last-child)::after {
+  content: "\2192";
+  position: absolute;
+  right: -1.35rem;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 1.1rem;
+  color: var(--qk-orange);
+}
+
+@media screen and (max-width: 59.9375em) {
+  .qk-flow {
+    grid-template-columns: 1fr;
+    gap: 1.4rem;
+  }
+
+  .qk-flow > div:not(:last-child)::after {
+    content: "\2193";
+    right: auto;
+    left: 50%;
+    top: auto;
+    bottom: -1.45rem;
+    transform: translateX(-50%);
+  }
+
+  .qk-hero {
+    padding: 1.4rem 1.1rem;
+  }
+
+  .md-typeset .qk-hero h1 {
+    font-size: 1.9rem;
+  }
+}

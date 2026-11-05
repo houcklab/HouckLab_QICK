@@ -79,6 +79,7 @@ How the hold ends:
   non-interactively.
 - Any error while starting the program also stops the tones.
 
+<a id="stray-tone-hazard"></a>
 **Stray-tone hazard.** A periodic output keeps playing after the program ends, after Python
 returns and after the Pyro client disconnects; only `reset_gens()` (or a later pulse on the same
 generator) replaces it. The step therefore never returns with the tones on. If a session is

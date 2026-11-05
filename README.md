@@ -48,6 +48,20 @@ few (`R.undriven_single_shot(shots=10_000, repeat=2)`); see
 
 ## Documentation
 
+The documentation is also a website, with search, light and dark themes, hover definitions of the
+jargon and links from code names to their source. New to the code? Start with
+[docs/getting_started.md](docs/getting_started.md). To browse it as a website, with `.venv` active:
+
+```
+pip install -r requirements-docs.txt
+mkdocs serve
+```
+
+then open http://127.0.0.1:8765. `mkdocs build` writes a static copy to the git-ignored site
+folder that opens straight from disk (its index.html), search included. The site is configured in `mkdocs.yml`
+(navigation) and `site_src/` (theme, hooks).
+
+- [docs/getting_started.md](docs/getting_started.md): your first session, from installing to finding your data.
 - [docs/README.md](docs/README.md): the index and the reading path (concepts, experiments, glossary).
 - [docs/running_a_session.md](docs/running_a_session.md): the session file, plans, overrides, dry run, where data lands.
 - [docs/adding_a_device.md](docs/adding_a_device.md): writing `devices/<NAME>.py`, calibration write-back, archiving a cooldown.

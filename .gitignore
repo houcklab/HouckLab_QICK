@@ -2,6 +2,8 @@
 *.pyc
 /__pycache__/*
 /.idea/*
+# the built documentation website (mkdocs build)
+/site/
 /WorkingProjects/QM_Team/resonator_measurements/local_notebooks/
 /WorkingProjects/QM_Team/resonator_measurements/.idea/
 /WorkingProjects/QM_Team/resonator_measurements/bd/

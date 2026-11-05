@@ -1,0 +1,222 @@
+# The qicklab documentation website: the Markdown pages under docs/, rendered with MkDocs Material.
+#
+#   pip install -r requirements-docs.txt     # once
+#   mkdocs serve                             # live preview at http://127.0.0.1:8765
+#   mkdocs build                             # static site in site/; open site/index.html directly
+#
+# Every page under docs/ must be listed in `nav` below (tests/test_docs_site.py builds the site in
+# strict mode, so an unlisted page, a broken link or a missing anchor fails the test).
+# The pages stay plain Markdown that also reads on GitHub; the site-only machinery lives in
+# site_src/ (hooks, theme overrides, stylesheet, the hover-glossary of abbreviations).
+
+site_name: qicklab
+site_description: >-
+  Houck Lab code for measuring superconducting qubits with a Xilinx RFSoC running QICK:
+  how to run a session, what every experiment does, every parameter.
+site_author: Houck Lab, Princeton University
+copyright: Houck Lab, Princeton University &middot; built from the <code>bfc_code</code> branch
+
+repo_url: https://github.com/houcklab/HouckLab_QICK
+repo_name: houcklab/HouckLab_QICK
+edit_uri: blob/bfc_code/docs/
+
+docs_dir: docs
+site_dir: site
+# not MkDocs' default 8000: Windows reserves port 8000 on the lab PC (netsh ... excludedportrange),
+# where `mkdocs serve` then fails with WinError 10013
+dev_addr: 127.0.0.1:8765
+# .html URLs (not folders) so the built site also works opened straight from disk (offline plugin)
+use_directory_urls: false
+
+# docs/README.md is the reading path (GitHub shows it for the docs/ folder); the site's home page is
+# docs/index.md. MkDocs would drop README.md as a second index; site_src/hooks.py publishes it as
+# reading-path.html instead.
+exclude_docs: |
+  /README.md
+
+hooks:
+  - site_src/hooks.py
+
+theme:
+  name: material
+  custom_dir: site_src/overrides
+  language: en
+  favicon: assets/images/favicon.svg
+  icon:
+    logo: material/sine-wave
+    repo: fontawesome/brands/github
+    view: material/file-code-outline
+  font:
+    text: Libre Franklin
+    code: Fira Mono
+  palette:
+    - media: "(prefers-color-scheme)"
+      toggle:
+        icon: material/brightness-auto
+        name: "Theme: follows your system. Switch to light"
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-sunny
+        name: "Theme: light. Switch to dark"
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-night
+        name: "Theme: dark. Switch to follow your system"
+  features:
+    - navigation.tabs          # top-level sections as tabs; the sidebar shows only the current one
+    - navigation.sections      # sub-groups (e.g. "Find the qubit") as headings, not folds
+    - navigation.indexes       # a section can have an overview page (Experiments)
+    - navigation.path          # breadcrumbs above the page title
+    - navigation.footer        # previous / next page at the bottom: the reading order
+    - navigation.top           # "back to top" button on long pages
+    - navigation.tracking      # the address bar follows the section you are reading
+    - toc.follow               # the right-hand contents keep the current section in view
+    - search.suggest
+    - search.highlight
+    - search.share
+    - content.code.copy        # copy button on every code block
+    - content.code.annotate    # numbered explanations inside code blocks
+    - content.tabs.link        # choosing "Windows" in one tab set chooses it everywhere
+    - content.tooltips         # hover definitions of abbreviations and link titles
+    - content.action.view      # "view the source of this page" on GitHub
+
+extra_css:
+  - assets/stylesheets/qicklab.css
+
+extra:
+  # branch the source links (site_src/hooks.py) and "view source" point at
+  source_ref: bfc_code
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/houcklab/HouckLab_QICK/tree/bfc_code
+      name: qicklab on GitHub (bfc_code)
+
+plugins:
+  - search:
+      # also split CamelCase and dotted names, so "SingleShot" finds SingleShotProgramFFMUX and
+      # "readout" finds qicklab.core.readout; underscores stay, so "relax_delay" is one word
+      separator: '[\s\-,:!=\[\]()"`/]+|\.(?!\d)|&[lg]t;|(?!\b)(?=[A-Z][a-z])'
+  - offline
+
+validation:
+  nav:
+    omitted_files: warn
+    not_found: warn
+    absolute_links: info
+  links:
+    not_found: warn
+    anchors: warn
+    absolute_links: info
+    unrecognized_links: info
+
+markdown_extensions:
+  - abbr
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+      permalink_title: Link to this section
+      toc_depth: 3
+      # GitHub's heading anchors, so links written for GitHub (parameters.md#rt1) work here too
+      slugify: !!python/object/apply:pymdownx.slugs.slugify
+        kwds:
+          case: lower
+  - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.snippets:
+      base_path: ["."]
+      check_paths: true
+      auto_append:
+        - site_src/abbreviations.md
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+
+nav:
+  - Home: index.md
+  - Getting started:
+      - Your first session: getting_started.md
+      - Reading path: README.md
+  - Guides:
+      - Running a session: running_a_session.md
+      - Bringing up a new chip: bringup_workflow.md
+      - Adding a device: adding_a_device.md
+      - Troubleshooting: troubleshooting.md
+  - Concepts:
+      - Config regimes A and B: concepts/config_regimes.md
+      - The readout window: concepts/readout_window.md
+      - Averaging and repetition: concepts/averaging.md
+      - Timing and units: concepts/timing_and_units.md
+      - IQ data conventions: concepts/iq_conventions.md
+  - Experiments:
+      - experiments/README.md
+      - Amplifier:
+          - TWPA bias and pump: experiments/twpa.md
+      - Find the resonator:
+          - Transmission fit: experiments/transmission_fit.md
+          - Transmission sweep: experiments/transmission_sweep.md
+          - Continuous tones: experiments/cw_tones.md
+      - Find the qubit:
+          - Two-tone spectroscopy: experiments/two_tone_spec.md
+          - Spec gain x length sweep: experiments/spec_gain_length_sweep.md
+          - Repeated two-tone spec: experiments/trans_qubit_spec.md
+          - Dispersive shift (chi): experiments/chi_shift.md
+      - Drive and read out:
+          - Amplitude Rabi: experiments/amplitude_rabi.md
+          - Single shot: experiments/single_shot.md
+          - Readout optimisation: experiments/readout_optimize.md
+          - Qubit pulse optimisation: experiments/qubit_optimize.md
+      - Coherence:
+          - T1 (energy relaxation): experiments/t1.md
+          - T2 Ramsey: experiments/t2_ramsey.md
+          - T2 echo: experiments/t2_echo.md
+          - Coherence combinations: experiments/coherence_combos.md
+          - Single-shot T1: experiments/t1_single_shot.md
+          - Interleaved coherence: experiments/interleaved_coherence.md
+          - Automated coherence: experiments/auto_coherence.md
+      - Active reset:
+          - How active reset works: experiments/active_reset.md
+          - Active reset verification: experiments/active_reset_verify.md
+      - Charge and parity:
+          - Charge sweep: experiments/charge_sweep.md
+          - Charge transmission sweep: experiments/charge_transmission_sweep.md
+          - Charge dispersion: experiments/charge_dispersion.md
+          - Modified Ramsey: experiments/modified_ramsey.md
+          - Modified Ramsey control: experiments/modified_ramsey_control.md
+          - Undriven single shot: experiments/undriven_single_shot.md
+          - Zero-span parity: experiments/zero_span_parity.md
+  - Reference:
+      - Parameters: parameters.md
+      - Glossary: glossary.md
+      - Hardware: hardware.md
+      - "Device: CSTQ03": devices/CSTQ03.md
+  - Developers:
+      - Architecture: architecture.md
+      - 2026-10 refactor record:
+          - Handoff and decisions: dev/refactor-2026-10/HANDOFF.md
+          - Design: dev/refactor-2026-10/design.md
+          - Brief 3a: dev/refactor-2026-10/brief_3a.md
+          - "Critique: engineering": dev/refactor-2026-10/critique_eng.md
+          - "Critique: user": dev/refactor-2026-10/critique_user.md
+          - Review findings: dev/refactor-2026-10/review/README.md
+          - "Audit: infrastructure": dev/refactor-2026-10/audit/infra.md
+          - "Audit: runners": dev/refactor-2026-10/audit/runners.md
+          - "Audit: basic experiments": dev/refactor-2026-10/audit/experiments_basic.md
+          - "Audit: advanced experiments": dev/refactor-2026-10/audit/experiments_advanced.md
+          - "Audit: charge-parity runs": dev/refactor-2026-10/audit/charge_parity_runs.md

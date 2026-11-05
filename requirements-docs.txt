@@ -1,0 +1,7 @@
+# The documentation website (mkdocs.yml). Install once, then run `mkdocs serve` from the repo root.
+# Pinned so the site builds the same everywhere. mkdocs-material 9.7.7 works with the Pygments the
+# lab .venv already has (2.19.2), so installing this there adds packages and upgrades none
+# (checked 2026-11-04); a newer mkdocs-material would upgrade Pygments.
+mkdocs==1.6.1
+mkdocs-material==9.7.7
+pymdown-extensions==12.3

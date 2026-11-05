@@ -32,6 +32,7 @@ archive/              unused code kept for reference, outside the package (archi
 scripts/gen_docs.py   parameter registry -> docs/parameters.md and the step pages' recipe tables
 tests/                regression/ (golden), refactor/ (equivalence gate), test_*.py, hardware/
 docs/                 user and developer docs; dev/refactor-2026-10/ is the refactor record
+mkdocs.yml, site_src/ the docs website (MkDocs Material): nav, theme, build hooks
 pyproject.toml        dependencies (qick pin), ruff and pytest configuration
 ```
 
@@ -48,6 +49,7 @@ python -m pytest tests/regression                        # golden only, both dri
 REGRESSION_LABELS=RunT1 REGRESSION_VARIANTS=A python -m pytest tests/regression
 python docs/dev/refactor-2026-10/tools/diff_labels.py RunT1 --variants A   # leaf diff vs golden
 python scripts/gen_docs.py --check                       # generated docs up to date?
+mkdocs build --strict                                    # the docs website (pip install -r requirements-docs.txt)
 ```
 
 - `tests/regression/`: `golden_cstq03.json` fingerprints, per run label and synthetic board (A,
@@ -64,6 +66,8 @@ python scripts/gen_docs.py --check                       # generated docs up to 
   `qicklab/core/params.py`, cross-checked against the code and the golden.
 - `tests/test_gen_docs.py`: `scripts/gen_docs.py` is idempotent on the committed docs; rerun it
   after changing the registry, a recipe, a group or the device model.
+- `tests/test_docs_site.py`: the website builds in strict mode (a docs page missing from the `mkdocs.yml`
+  nav, a broken link or anchor fails); skipped without `requirements-docs.txt`.
 - `tests/test_agent_docs.py`: CLAUDE.md = AGENTS.md below line 1; paths quoted here and in README exist.
 - the other `tests/test_*.py`: unit tests (fits, analysis, recipes, session, device, save formats);
   `tests/hardware/` holds hardware-in-the-loop scripts, run by hand on the lab network only.
