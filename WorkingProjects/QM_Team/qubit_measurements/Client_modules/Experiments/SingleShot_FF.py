@@ -40,7 +40,7 @@ from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.mT1AC
 # from q4diamond.Client_modules.Experiment_Scripts.mOptimizeReadoutandPulse_FF import ReadOpt_wSingleShotFF, QubitPulseOpt_wSingleShotFF
 
 
-soc, soccfg = makeProxy() # makeProxy_RFSOC_143()
+soc, soccfg = makeProxy(ns_host_ip="192.168.1.130") # makeProxy_RFSOC_143()
 
 # # Device 2 old
 # Qubit_Parameters = {
@@ -100,38 +100,90 @@ soc, soccfg = makeProxy() # makeProxy_RFSOC_143()
 # }
 
 # Device 3: FTTv02_SiOxJJ (3.0 nm)
-Qubit_Parameters = {
-    # "1": {"Readout": {"Frequency":  6627.759, "Gain": 2000},
-    #       "Qubit": {"Frequency": 1319.966, "Gain": 3841, "sigma": 0.7, "flattop_length": None},  #pi = 3841
-    #       "outerfoldername": "Z:/t1Team/Data/2026-06-27_BFG_recooldown/Device 2 KOH + SiOx JJ (2 CLs)/RFSOC/Q1//"},
-    # # Not found
+# Qubit_Parameters = {
+#     # "1": {"Readout": {"Frequency":  6627.759, "Gain": 2000},
+#     #       "Qubit": {"Frequency": 1319.966, "Gain": 3841, "sigma": 0.7, "flattop_length": None},  #pi = 3841
+#     #       "outerfoldername": "Z:/t1Team/Data/2026-06-27_BFG_recooldown/Device 2 KOH + SiOx JJ (2 CLs)/RFSOC/Q1//"},
+#     # # Not found
 
+#     "2":
+#     {
+#         "Readout": {"Frequency": 6821.65, "Gain": 3300},
+#         "Qubit":
+#         {
+#             "Frequency": 2854.95,   # pi pulse: 2855.05
+#             "Gain":  7000,          # pi pulse: 18000
+#             "sigma": 0.1,           # pi pulse: 0.1
+#             "flattop_length": None
+#         },
+#         "outerfoldername": "Z:/FluxTeam/Data/FTT02_SiOxJJ_2026_06_25/RFSOC/q2//"
+#     },
+
+
+#     # "3": {"Readout": {"Frequency":  6817.98, "Gain": 4000},
+#     #       "Qubit": {"Frequency": 1682.5, "Gain": 5000, "sigma": 1.9, "flattop_length": None},  #pi 5000
+#     #       "outerfoldername": "Z:/t1Team/Data/2026-06-27_BFG_recooldown/Device 2 KOH + SiOx JJ (2 CLs)/RFSOC/Q3//"},
+
+#     # "4": {"Readout": {"Frequency":  6911.954, "Gain": 4000},
+#     #       "Qubit": {"Frequency":   2043, "Gain": 1089, "sigma": 0.5, "flattop_length": None},
+#     #       "outerfoldername": "Z:/t1Team/Data/2026-06-27_BFG_recooldown/Device 2 KOH + SiOx JJ (2 CLs)/RFSOC/Q4//"},
+# }
+
+Qubit_Parameters = {
+    "1":
+            {
+                "Readout": {"Frequency": 6767.75 , "Gain": 2500},
+                "Qubit":
+                {
+                    "Frequency": 4115.68,   #4115.68 0V, 4138.84 2V A12
+                    "Gain":  8280,          # pi pulse: 8280 0V, 13320 2V A12
+                    "sigma": 0.2,           # pi pulse: 0.2 0V, 0.1 2V A12
+                    "flattop_length": 0.6 # pi pulse: 0.6 0V, 0.2 2V A12
+                },
+                "outerfoldername": R"Z:\FluxTeam\Data\FTT02_AlOxJJ_GlobalGate_2026_10_28\RFSOC\6p77/"
+            },
     "2":
+        {
+            "Readout": {"Frequency": 6833.05 , "Gain": 2500},
+            "Qubit":
+            {
+                "Frequency": 4032.2,   # pi pulse: 2855.05
+                "Gain":  2400,          # pi pulse: 18000
+                "sigma": 0.2,           # pi pulse: 0.1
+                "flattop_length": 0.6
+            },
+            "outerfoldername": R"Z:\FluxTeam\Data\FTT02_AlOxJJ_GlobalGate_2026_10_28\RFSOC\6p83/"
+        },
+    "4":
+            {
+                "Readout": {"Frequency": 7025.95, "Gain": 2500},
+                "Qubit":
+                {
+                    "Frequency": 4076.9,   # pi pulse: 2855.05
+                    "Gain":  13600,          # pi pulse: 18000
+                    "sigma": 2,           # pi pulse: 0.1
+                    "flattop_length": 4
+                },
+                "outerfoldername": R"Z:\FluxTeam\Data\FTT02_AlOxJJ_GlobalGate_2026_10_28\RFSOC\7p03/"
+            },
+    "6":
     {
-        "Readout": {"Frequency": 6821.65, "Gain": 3300},
+        "Readout": {"Frequency": 7250.898, "Gain": 2500},
         "Qubit":
         {
-            "Frequency": 2854.95,   # pi pulse: 2855.05
-            "Gain":  7000,          # pi pulse: 18000
+            "Frequency": 4067.8,   # pi pulse: 2855.05
+            "Gain":  3500,          # pi pulse: 18000
             "sigma": 0.1,           # pi pulse: 0.1
-            "flattop_length": None
+            "flattop_length": 0.2
         },
-        "outerfoldername": "Z:/FluxTeam/Data/FTT02_SiOxJJ_2026_06_25/RFSOC/q2//"
+        "outerfoldername": R"Z:\FluxTeam\Data\FTT02_AlOxJJ_GlobalGate_2026_10_28\RFSOC\7p25/"
     },
 
-
-    # "3": {"Readout": {"Frequency":  6817.98, "Gain": 4000},
-    #       "Qubit": {"Frequency": 1682.5, "Gain": 5000, "sigma": 1.9, "flattop_length": None},  #pi 5000
-    #       "outerfoldername": "Z:/t1Team/Data/2026-06-27_BFG_recooldown/Device 2 KOH + SiOx JJ (2 CLs)/RFSOC/Q3//"},
-
-    # "4": {"Readout": {"Frequency":  6911.954, "Gain": 4000},
-    #       "Qubit": {"Frequency":   2043, "Gain": 1089, "sigma": 0.5, "flattop_length": None},
-    #       "outerfoldername": "Z:/t1Team/Data/2026-06-27_BFG_recooldown/Device 2 KOH + SiOx JJ (2 CLs)/RFSOC/Q4//"},
 }
 
 # Readout
-Qubit_Readout = 2
-Qubit_Pulse = 2
+Qubit_Readout = 1
+Qubit_Pulse = 1
 outerFolder = Qubit_Parameters[str(Qubit_Readout)]['outerfoldername']
 
 ConstantTone = False  # determine cavity frequency
@@ -140,7 +192,7 @@ ConstantTone_qubit = False  # For testing the qubit amplification & filtering
 RunTransmissionSweep = False   # determine cavity frequency
 Run2ToneSpec = False
 Spec_relevant_params = {"qubit_gain": 5000,  # 5000
-                        "SpecSpan": 30,  # 30
+                        "SpecSpan": 10,  # 30
                         "SpecNumPoints": 101,  # 101
                         "reps": 10, 'rounds': 10,  # total number of shots = reps x rounds. Default: 10 x 10
                         'Gauss': False, "sigma": 1.2, "gain": 5000}  # False -- no pulse #If you don't see RabiAmp but with Gauss True see the qubit, the next thing to check is gain, you might not have the right pi pulse
@@ -157,15 +209,15 @@ ChiShift_params = {"reps": 1000,
 
 RunAmplitudeRabi = False
 Amplitude_Rabi_params = {"qubit_freq": Qubit_Parameters[str(Qubit_Pulse)]['Qubit']['Frequency'],
-                         "min_gain": 0, "max_gain": 30000, 'number_of_steps': 51,
+                         "min_gain": 0, "max_gain": 18000, 'number_of_steps': 51,
                          "reps": 15, 'rounds': 15,
-                         'relax_delay': 5000}  #Always change the max gain if you don't see it, also compare what you get with Transmission data
+                         'relax_delay': 1000}  #Always change the max gain if you don't see it, also compare what you get with Transmission data
 
 RunT1 = True
 RunT2 = False  # Ramsey
-T1T2_params = {"T1_step": 100, "T1_expts": 100, "T1_reps": 15, "T1_rounds": 15,
+T1T2_params = {"T1_step": 0.5, "T1_expts": 400, "T1_reps": 10, "T1_rounds": 10,
                "T2_step": 5, "T2_expts": 100, "T2_reps": 10, "T2_rounds": 10, "freq_shift": 0.02,
-               "relax_delay": 3000,
+               "relax_delay": 200,
                'repetitions': 1}
 
 RunT2E = False

@@ -116,7 +116,7 @@ class QubitSpecSliceFF(ExperimentClass):
         plt.figure(figNum)
         plt.plot(x_pts, avgi, '.-', color = 'Orange', label="I")
         plt.plot(x_pts, avgq, '.-', color = 'Blue', label="Q")
-        plt.plot(x_pts, avgamp0, color='Magenta', label="Amp")
+        plt.plot(x_pts, avgamp0, '.-', color = 'Magenta', label="Amp")
         plt.axvline(x=amp_max, linestyle='--', color='r')
         plt.ylabel("a.u.")
         plt.xlabel("Qubit Frequency (MHz)")
