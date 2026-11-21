@@ -30,10 +30,10 @@ BaseConfig = {
     "res_phase": 165.0,
 
     "read_pulse_style": "const",
-    "read_length": 3.5,
+    "read_length": 15,
     "readout_guard_us": 1.0,
     "readout_thermalization_us": 10.0,
-    "read_pulse_gain": 1880,
+    "read_pulse_gain": 5000,
     "read_pulse_freq": 6933.026,
 
     "qubit_pulse_style": "arb",
@@ -52,7 +52,7 @@ BaseConfig = {
     "reset_meas_syncdelay_us": 10.0,
     "reset_max_iters": 3,
 
-    "ff_park_gain": -25146,
+    "ff_park_gain": 0,
     "ff_park_settle_us": 1.0,
     "FF_Qubits": FF_Qubits,
 
@@ -75,11 +75,11 @@ FLUX_FIT_PARAMS = [
     -4.72847424324e-05,
 ]
 
-RESONATOR_FIT_PARAMS = [6929532609.626256, 102183842.77558708, 12.457027141606355, 0.18504287441157935, 60361.19628170067, -25581.578015529918, 0.18012547035756307]
+RESONATOR_FIT_PARAMS = [7005693310.219587,125664785.8662649,13.550189128853306,0.23483392070686102,89314.89331157962,-5756.039169389053,0.5844195230341026]
 
 FF_STEP_TARGET_GAIN = 8000
 
-outerFolder = 'Z:/FluxTeam/Data/FTT02_AlOxJJ_2026_08_28/RFSOC'
+outerFolder = 'Z:/FluxTeam/Data/FTT_SiOxJJ_Hybrid_2026_10_27/RFSOC'
 
 LOCAL_OVERRIDE_KEYS = (
     "FF_CH",

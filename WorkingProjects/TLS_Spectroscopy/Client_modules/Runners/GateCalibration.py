@@ -33,8 +33,8 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mCoherence impo
     needs_standalone_ss_calibration,
 )
 
-QUBIT = "q3"
-CHIP_NAME_FOR_CONFIG = "FTT02_AlOxJJ"
+QUBIT = "BL"
+CHIP_NAME_FOR_CONFIG = "FTT02_SiOxJJHybrid"
 LIVE_PLOTS = True
 
 FF_HOLD_GAIN = 0
@@ -45,58 +45,58 @@ RESET_MODE = "active"
 _RESET_SESSION = ProductionResetSession.passive()
 
 P_TRANSMISSION = {
-    "run": False,
+    "run": True,
     "qua_shot_order": None,
     "prepare_excited": False,
     "qubit_pi_freq_mhz": None,
     "qubit_pi_gain": None,
-    "shots": 1000,
-    "freq_start_mhz": 6929.0,
-    "freq_stop_mhz": 6935.0,
+    "shots": 500,
+    "freq_start_mhz": 7010,
+    "freq_stop_mhz": 7014,
     "freq_points": 201,
-    "spec_amp": 1000,
+    "spec_amp": 6500,
     "spec_len_us": 10,
 }
 
 P_TRANSMISSION_SWEEP = {
     "run": False,
     "shots": 500,
-    "freq_start_mhz": None,
-    "freq_stop_mhz": None,
+    "freq_start_mhz": 6929,
+    "freq_stop_mhz": 6931,
     "freq_points": 101,
     "gain_min": 1000,
-    "gain_max": 10000,
+    "gain_max": 20000,
     "gain_points": 10,
     "spec_len_us": None,
 }
 
 P_QUBIT_SPEC = {
     "run": False,
-    "readout_gain": None,
-    "shots": 100,
-    "freq_start_mhz": 4300,
-    "freq_stop_mhz": 4400,
+    "readout_gain": 8000,
+    "shots": 1000,
+    "freq_start_mhz": 3400,
+    "freq_stop_mhz": 3500,
     "freq_points": 101,
-    "spec_gain": 10000,
-    "spec_length_us": 1.0,
+    "spec_gain": 25000,
+    "spec_length_us": 25.0,
     "relax_delay_us": 100.0,
 }
 
 P_QUBIT_SPEC_SWEEP = {
     "run": False,
-    "shots": 1000,
-    "freq_start_mhz": 2520,
-    "freq_stop_mhz": 2540,
-    "freq_points": 201,
+    "shots": 5000,
+    "freq_start_mhz": 2400,
+    "freq_stop_mhz": 3800,
+    "freq_points": 501,
     "gain_min": 200,
-    "gain_max": 10000,
-    "gain_points": 12,
-    "spec_length_us": 10.0,
+    "gain_max": 30000,
+    "gain_points": 101,
+    "spec_length_us": 20.0,
     "relax_delay_us": 100.0,
 }
 
 P_SS_CAL = {
-    "run": True,
+    "run": False,
     "shots": 1000,
     "number_pi_pulses": 1,
     "ground_threshold": 0.7,
@@ -130,7 +130,7 @@ P_RABI_CHEVRON_SS = {
 }
 
 P_READOUT_OPT = {
-    "run": True,
+    "run": False,
     "shots": 500,
     "num_pi": 1,
     "pulse_type": "X180",

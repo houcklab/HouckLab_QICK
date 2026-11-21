@@ -50,8 +50,8 @@ matplotlib.use("TkAgg" if LIVE_PLOTS else "Agg", force=True)
 import matplotlib.pyplot as plt
 import gc
 
-CHIP_NAME_FOR_CONFIG = "FTTv02_AlOxJJ"
-QUBIT = "q3"
+CHIP_NAME_FOR_CONFIG = "FTTv02_SiOxJJHybrid"
+QUBIT = "TL"
 
 
 SET_YOKO = False
@@ -67,7 +67,7 @@ FLUX_FIT_PARAMS = [
     -4.72847424324e-05,
 ]
 
-BASELINE_DC_OFFSET = -25146
+BASELINE_DC_OFFSET = 24550
 TARGET_DC_OFFSET = -14750
 FLUX_TAIL_COMPENSATION_GAIN = 1.0
 
@@ -75,7 +75,7 @@ SAVE_RESONATOR_LOOKUP = False
 USE_RESONATOR_LOOKUP = False
 RESONATOR_LOOKUP_CSV = None
 
-RESONATOR_FIT_PARAMS = [6929532609.626256, 102183842.77558708, 12.457027141606355, 0.18504287441157935, 60361.19628170067, -25581.578015529918, 0.18012547035756307]
+RESONATOR_FIT_PARAMS = [7005693310.219587,125664785.8662649,13.550189128853306,0.23483392070686102,89314.89331157962,-5756.039169389053,0.5844195230341026]
 
 RESET_MODE = "active"
 
@@ -84,32 +84,32 @@ _RESET_SESSION = ProductionResetSession.passive()
 
 P1_RESONATOR = {
     "run": False,
-    "shots": 300,
-    "freq_min": 6931,
-    "freq_max": 6934,
+    "shots": 1000,
+    "freq_min": 7010,
+    "freq_max": 7013.5,
     "freq_step": 0.05,
-    "dc_min": -30000,
+    "dc_min": -20000,
     "dc_max": 30000,
     "dc_step": 500,
     "lookup_smooth_points": None,
     "live_plot": True,
-    "spec_amp": 1000,
-    "spec_len_us": 10.0,
+    "spec_amp": 5000,
+    "spec_len_us": 20.0,
 }
 
 P2_QUBIT_SPEC_FULL = {
-    "run": False,
-    "advanced_fit": False,
+    "run": True,
+    "advanced_fit": True,
     "shots": 100,
     "relax_delay_us": 100.0,
     "spec_amp": 25000,
     "spec_len_us": 0.5,
-    "freq_min": 4250.0,
-    "freq_max": 4400.0,
-    "freq_step": 0.5,
-    "dc_min": -27000,
-    "dc_max": -20000,
-    "dc_step": 250,
+    "freq_min": 3800,
+    "freq_max": 4200,
+    "freq_step": 10,
+    "dc_min": -20000,
+    "dc_max": 10000,
+    "dc_step": 500,
     "live_plot": True,
 }
 
@@ -159,7 +159,7 @@ P4_LONG_TIME = {
 }
 
 P5_SS_CAL = {
-    "run": True,
+    "run": False,
     "ss_shots": 1000,
     "min_F": 0.60,
 }
