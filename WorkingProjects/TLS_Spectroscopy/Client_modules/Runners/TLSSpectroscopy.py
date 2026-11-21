@@ -67,7 +67,8 @@ FLUX_FIT_PARAMS = [
     -4.72847424324e-05,
 ]
 
-BASELINE_DC_OFFSET = 24550
+# TL candidate sweet spot from the new device's resonator fit.
+BASELINE_DC_OFFSET = -5756
 TARGET_DC_OFFSET = -14750
 FLUX_TAIL_COMPENSATION_GAIN = 1.0
 
@@ -99,17 +100,17 @@ P1_RESONATOR = {
 
 P2_QUBIT_SPEC_FULL = {
     "run": True,
-    "advanced_fit": True,
+    "advanced_fit": False,
     "shots": 100,
-    "relax_delay_us": 100.0,
-    "spec_amp": 25000,
+    "relax_delay_us": 300.0,
+    "spec_amp": 32000,
     "spec_len_us": 0.5,
-    "freq_min": 3800,
-    "freq_max": 4200,
-    "freq_step": 10,
+    "freq_min": 4000,
+    "freq_max": 6000,
+    "freq_step": 0.5,
     "dc_min": -20000,
     "dc_max": 10000,
-    "dc_step": 500,
+    "dc_step": 1000,
     "live_plot": True,
 }
 
