@@ -35,6 +35,158 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.progress import (
 )
 
 
+def parked_qubit_search_config(base_cfg, resonator_params, *, park_gain=None,
+                               freq_min_mhz=3500.0, freq_max_mhz=5500.0,
+                               freq_step_mhz=1.0, shots=100, spec_gain=25000,
+                               spec_length_us=0.5):
+    params = np.asarray(resonator_params, dtype=float)
+    if params.shape != (7,) or not np.all(np.isfinite(params)):
+        raise ValueError("Qubit search requires the seven-parameter resonator fit.")
+    bare, coupling, ej, ec, period, offset, asymmetry = params
+    if min(ej, ec, period) <= 0 or not 0 <= asymmetry <= 1:
+        raise ValueError("Invalid resonator fit parameters.")
+    park = float(offset if park_gain is None else park_gain)
+    values = [park, freq_min_mhz, freq_max_mhz, freq_step_mhz,
+              shots, spec_gain, spec_length_us]
+    if not np.all(np.isfinite(values)):
+        raise ValueError("Search settings must be finite.")
+    if not -32767 <= park <= 32767 or not 0 < spec_gain <= 32767:
+        raise ValueError("Park and drive gains must fit the DAC range.")
+    if shots < 1 or int(shots) != shots or spec_length_us <= 0:
+        raise ValueError("Shots must be a positive integer and pulse length positive.")
+    if not 0 < freq_min_mhz < freq_max_mhz or freq_step_mhz <= 0:
+        raise ValueError("Require positive increasing frequencies and positive step.")
+    intervals = (freq_max_mhz - freq_min_mhz) / freq_step_mhz
+    if not np.isclose(intervals, round(intervals), rtol=0, atol=1e-8):
+        raise ValueError("Frequency span must be divisible by frequency step.")
+    park = int(round(park))
+    phase = np.pi * (park - offset) / period
+    ej_effective = ej * np.sqrt(np.cos(phase)**2 + asymmetry**2 * np.sin(phase)**2)
+    qubit_hz = (np.sqrt(8 * ej_effective * ec) - ec) * 1e9
+    detuning = bare - qubit_hz
+    readout_mhz = (bare + qubit_hz + np.sign(detuning)
+                   * np.sqrt(detuning**2 + 4 * coupling**2)) / 2e6
+    cfg = copy.deepcopy(base_cfg)
+    cfg.update({
+        "ff_park_gain": park, "ff_gain": park, "ff_hold_gain": park,
+        "opx_persistent_park": True, "opx_hard_flux_steps": True,
+        "opx_park_preroll_us": 1000.0, "qua_assert_park_at_start": True,
+        "readout_after_park": False, "read_pulse_freq": float(readout_mhz),
+        "reset_mode": "passive", "qua_shot_order": True,
+        "shots": int(shots), "reps": int(shots), "relax_delay": 300.0,
+        "qua_passive_pre_point_delay_us": 300.0,
+        "qubit_pulse_style": "const", "qubit_gain": int(spec_gain),
+        "qubit_length": float(spec_length_us), "qubit_mode_periodic": False,
+        "prepare_excited": False, "apply_flux_tail_compensation": False,
+    })
+    cfg.pop("flux_tail_compensation", None)
+    cfg.pop("opx_reset_calibration", None)
+    frequencies = np.linspace(freq_min_mhz, freq_max_mhz, int(round(intervals)) + 1)
+    return cfg, frequencies
+
+
+def run_parked_qubit_search(argv=None):
+    import argparse
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.Runners import TLSSpectroscopy as tls
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mTransmission import Transmission
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.Experiment import ExperimentClass
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.active_reset_OPX.qua_order import acquire_passive_pulse_grid
+    import matplotlib.pyplot as plt
+
+    parser = argparse.ArgumentParser(description="Fixed-flux, paired IQ qubit search")
+    parser.add_argument("--qubit-search", action="store_true")
+    parser.add_argument("--freq-min-mhz", type=float, default=3500.0)
+    parser.add_argument("--freq-max-mhz", type=float, default=5500.0)
+    parser.add_argument("--freq-step-mhz", type=float, default=1.0)
+    parser.add_argument("--shots", type=int, default=100)
+    parser.add_argument("--spec-gain", type=int, default=25000)
+    parser.add_argument("--spec-length-us", type=float, default=0.5)
+    parser.add_argument("--park-gain", type=float)
+    args = vars(parser.parse_args(argv))
+    args.pop("qubit_search")
+    cfg, frequencies = parked_qubit_search_config(
+        tls.BaseConfig, tls.RESONATOR_FIT_PARAMS, **args)
+    soc, soccfg = tls.makeProxy()
+    if soc.streamer.readout_running():
+        raise RuntimeError("Stop the existing QICK acquisition before this search.")
+    print(f"Qubit spec: fixed park {cfg['ff_park_gain']:+d} DAC; "
+          f"{frequencies[0]:g}–{frequencies[-1]:g} MHz, "
+          f"{cfg['shots']} shots per drive-on/off condition.")
+    readout_frequencies = cfg["read_pulse_freq"] + np.linspace(-0.75, 0.75, 61)
+    transmission = Transmission(
+        soc=soc, soccfg=soccfg, path=tls.QUBIT, outerFolder=tls.outerFolder,
+        suffix="Parked_Qubit_Search_Readout", cfg=dict(cfg), f_vec=readout_frequencies)
+    result = transmission.acquire(progress=True, plotDisp=tls.LIVE_PLOTS)
+    transmission.save_config()
+    dip = float(result["data"]["resonator_dip_freq_mhz"])
+    if dip <= readout_frequencies[0] or dip >= readout_frequencies[-1]:
+        raise RuntimeError("Readout minimum is at the sweep edge; inspect the saved transmission.")
+    cfg["read_pulse_freq"] = dip
+    experiment = ExperimentClass(
+        soc=soc, soccfg=soccfg, path=tls.QUBIT, outerFolder=tls.outerFolder,
+        suffix="Parked_Qubit_Search", cfg=cfg)
+    experiment.save_config()
+    i_blocks, q_blocks = [], []
+    total, completed, started = cfg["shots"], 0, time.time()
+    fig, axes = plt.subplots(3, 1, sharex=True, figsize=(10, 8))
+    while completed < total:
+        block_cfg = dict(cfg, shots=min(20, total - completed))
+        block_cfg["reps"] = block_cfg["shots"]
+        gains = [0, cfg["qubit_gain"]] if len(i_blocks) % 2 == 0 else [cfg["qubit_gain"], 0]
+        i_values, q_values, telemetry = acquire_passive_pulse_grid(
+            soc, soccfg, block_cfg, frequencies_mhz=frequencies,
+            gains=gains, pulses=1,
+            progress=lambda done, count: progress_counter(
+                completed + done - 1, total, start_time=started, label="qubit spec"))
+        if gains[0] != 0:
+            i_values, q_values = i_values[:, ::-1, :], q_values[:, ::-1, :]
+        i_blocks.append(i_values)
+        q_blocks.append(q_values)
+        completed += block_cfg["shots"]
+        all_i, all_q = np.concatenate(i_blocks, axis=2), np.concatenate(q_blocks, axis=2)
+        signal = np.mean(all_i + 1j * all_q, axis=2)
+        difference = signal[:, 1] - signal[:, 0]
+        experiment.data = {
+            "frequency_mhz": frequencies, "I": all_i, "Q": all_q,
+            "condition_names": ["drive_off", "drive_on"],
+            "config": dict(cfg), "completed_shots_per_condition": completed,
+            "gain_order_alternates_every_20_shots": True,
+            "resonator_fit_parameters": list(tls.RESONATOR_FIT_PARAMS),
+            "readout_check_pickle": transmission.pname,
+            "acquisition_order": telemetry["order"],
+        }
+        experiment.pickle_data()
+        np.savez_compressed(experiment.dname + "_raw_iq.npz",
+                            frequency_mhz=frequencies, I=all_i, Q=all_q)
+        np.savetxt(experiment.dname + "_spectrum.csv",
+                   np.column_stack([frequencies, signal[:, 0].real, signal[:, 0].imag,
+                                    signal[:, 1].real, signal[:, 1].imag]), delimiter=",",
+                   header="frequency_mhz,I_off,Q_off,I_on,Q_on", comments="")
+        for ax in axes:
+            ax.clear()
+            ax.grid(alpha=.25)
+        axes[0].plot(frequencies / 1000, abs(signal[:, 0]), label="drive off")
+        axes[0].plot(frequencies / 1000, abs(signal[:, 1]), label="drive on")
+        axes[0].set_ylabel("Mean IQ magnitude")
+        axes[0].legend()
+        axes[1].plot(frequencies / 1000, difference.real, label="ΔI")
+        axes[1].plot(frequencies / 1000, difference.imag, label="ΔQ")
+        axes[1].set_ylabel("On − off IQ")
+        axes[1].legend()
+        axes[2].plot(frequencies / 1000, abs(difference))
+        axes[2].set_ylabel("|On − off IQ|")
+        axes[2].set_xlabel("Qubit drive frequency (GHz)")
+        fig.suptitle(f"{tls.QUBIT}: park {cfg['ff_park_gain']:+d} DAC, "
+                     f"readout {dip:.4f} MHz; {completed}/{total} shots per condition")
+        fig.tight_layout()
+        fig.savefig(experiment.iname, dpi=160)
+        if tls.LIVE_PLOTS:
+            plt.show(block=False)
+            plt.pause(.05)
+    print(f"Qubit spec complete: {experiment.pname}")
+    return experiment
+
+
 def template_refit_plan(environ=None):
     """Return the offline full-line-template refit contract."""
     environ = os.environ if environ is None else environ
@@ -2272,6 +2424,9 @@ def verify_dmem_roundtrip(soc, *, dmem_words, scratch_words=8):
 
 
 def main():
+    if "--qubit-search" in sys.argv[1:]:
+        run_parked_qubit_search()
+        return
     if return_readout_contract_requested():
         os.environ["MPLBACKEND"] = "Agg"
         run_return_readout_contract()
