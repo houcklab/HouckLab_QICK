@@ -165,6 +165,9 @@ def hist_process(
     xe, ye = np.median(ie), np.median(qe)
 
     if plot:
+        # a fresh figure: subplots(num=) on one an earlier run or step left open (plotDisp
+        # under a non-blocking backend) would stack the new axes on top of the old ones
+        plt.close(figNum)
         fig, axs = plt.subplots(nrows=1, ncols=3, figsize=(16, 8), num=figNum)
 
         fig.suptitle(title)

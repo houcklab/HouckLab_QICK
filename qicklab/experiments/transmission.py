@@ -206,6 +206,9 @@ class CavitySpecFF(ExperimentClass):
 
         self.data = data
 
+        # a fresh figure: one an earlier run left open (plotDisp under a non-blocking backend,
+        # e.g. the previous qubit of run_qubit_loop) would otherwise be drawn over
+        plt.close(figNum)
         fig = plt.figure(figNum)
         plt.plot(x_pts, avgi, ".-", color="Green", label="I")
         plt.plot(x_pts, avgq, ".-", color="Blue", label="Q")
@@ -244,6 +247,7 @@ class CavitySpecFF(ExperimentClass):
             fit_min_freq_ghz = float(x_fit_plot[fit_min_idx])
             fit_min_val_db = float(y_fit[fit_min_idx])
 
+            plt.close(figNum + 1)  # fresh, as above
             fig = plt.figure(figNum + 1)
             plt.plot(
                 x_plot,

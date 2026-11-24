@@ -430,6 +430,9 @@ class SingleShotProgramFFMUX(ExperimentClass):
                     data["data"].get("thermal_population_tail" + str(read_index), np.nan),
                 )
 
+                # a fresh figure: one an earlier run or step left open under this number
+                # (plotDisp under a non-blocking backend) would otherwise be drawn over
+                plt.close(figNum)
                 plt.figure(figNum, figsize=(8, 6))
                 plt.scatter(
                     i_th[labels == 0], q_th[labels == 0], s=8, alpha=0.4, label="ground-like"

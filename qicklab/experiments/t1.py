@@ -247,6 +247,9 @@ class T1FF(ExperimentClass):
             fig.clf(True)
             plt.close(fig)
 
+        # fresh: the guard above frees figNum only, and figNum + 1 can be a figure an earlier run
+        # left open (plotDisp under a non-blocking backend), which would be drawn over
+        plt.close(figNum + 1)
         fig = plt.figure(figNum + 1)
         plt.plot(x_pts, avgq, "o", label="q")
 

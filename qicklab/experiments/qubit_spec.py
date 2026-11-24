@@ -316,6 +316,9 @@ class QubitSpecSliceFF(ExperimentClass):
             q_len = self.cfg.get("qubit_length", "?")
             pulse_info = f"gain={q_gain}  length={q_len} µs"
 
+        # a fresh figure: one an earlier run or step left open under this number (plotDisp
+        # under a non-blocking backend) would otherwise be drawn over
+        plt.close(figNum)
         fig = plt.figure(figNum)
         plt.plot(x_pts, avgi, ".-", color="Orange", label="I")
         plt.plot(x_pts, avgq, ".-", color="Blue", label="Q")
@@ -335,6 +338,7 @@ class QubitSpecSliceFF(ExperimentClass):
         fig.clf(True)
         plt.close(fig)
 
+        plt.close(figNum + 1)  # fresh, as above
         fig = plt.figure(figNum + 1)
         plt.plot(x_pts, avgamp0, ".-", color="Purple", label="rotated IQ projection")
 

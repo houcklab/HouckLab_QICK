@@ -315,6 +315,9 @@ class T2R(ExperimentClass):
             fig.clf(True)
             plt.close(fig)
 
+        # fresh: the guard above frees figNum only, and figNum + 2 can be a figure an earlier run
+        # left open (plotDisp under a non-blocking backend), which would be drawn over
+        plt.close(figNum + 2)
         fig = plt.figure(figNum + 2)
         plt.plot(fft_freqs, fft_spec, "-", label="FFT")
 

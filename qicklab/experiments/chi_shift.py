@@ -250,6 +250,9 @@ class ChiShift(ExperimentClass):
             print(f"Joint fit failed ({fit['error']}): f_e - f_g from the argmin only")
             title_chi = f"f_e - f_g (= 2chi) = {chi_shift_mhz:.3f} MHz (argmin; fit failed)"
 
+        # a fresh figure: one an earlier run or step left open under this number (plotDisp
+        # under a non-blocking backend) would otherwise be drawn over
+        plt.close(figNum + 1)
         plt.figure(figNum + 1)
         plt.plot(x_pts, avgamp_ground, label="Ground", color="red", ls="-", marker=".")
         plt.plot(x_pts, avgamp_01, label="01", color="blue", ls="-", marker=".")

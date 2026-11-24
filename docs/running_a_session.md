@@ -366,7 +366,9 @@ steps do not reconnect.
 
 Today, importing the analysis package switches matplotlib to the Agg backend, so
 `plt.show(block=True)` is silently a no-op in every session: nothing opens on screen, nothing
-blocks, figures are only written to the step's png. A planned fix commit moves that choice to
+blocks, figures are only written to the step's png. Each png shows its own run only: a display
+starts from an empty figure even when an earlier step or loop visit left one open under the same
+figure number (`tests/test_figure_reuse.py`). A planned fix commit moves that choice to
 `Session(interactive_plots=False)`, which keeps the same non-blocking default. With `True`, a
 step whose display is on will open a window and wait for you to close it; do not combine that
 with long unattended loops (`undriven_single_shot` with many repeats, `interleaved_coherence`).
