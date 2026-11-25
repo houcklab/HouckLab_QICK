@@ -38,10 +38,12 @@ DEVICE = Device(
     # 2026-10-29: all values below are the 2026-10-01 CSTQ03 ones, not measured on this sample
     qubits={
         1: Qubit(
-            freq=2763,
-            gain=5000,
-            sigma=0.6,
-            readout=Readout(freq=6791.2, gain=1000),
+            # 2026-11-25: line 3263.5-3272.6 MHz at spec gain 150 and 500 (charge dispersion,
+            # not power broadening); pi from Rabi at sigma 0.02 us (0.1 us: pi ~800, partial)
+            freq=3268.0,
+            gain=4000,
+            sigma=0.02,
+            readout=Readout(freq=6853.8, gain=3000),
         ),
         2: Qubit(
             freq=3754.5,
