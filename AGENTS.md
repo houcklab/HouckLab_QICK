@@ -134,3 +134,21 @@ Guide: `docs/adding_a_device.md`.
 - Branch `qicklab_refactor` (from `bfc_code` at `0f0a51f`) was fast-forwarded into `bfc_code`;
   lab work continues on `bfc_code`.
   `main` is the lab's older tree (none of it is here); legacy code: `git show 0f0a51f:<path>`.
+
+## Experimental knowledge base (local, git-excluded)
+
+The lab's curated experimental knowledge (device behavior, protocols, failure modes, parity
+results, open hypotheses) lives in experimental_knowledge/ at the repo root. It is local only
+(listed in .git/info/exclude) and absent in a fresh clone. When it exists:
+
+1. Read experimental_knowledge/README.md (the index) before planning measurements; open only the
+   files the task needs.
+2. Before touching hardware, read experimental_knowledge/devices/<sample>.md (current state,
+   parameters with provenance) and the protocols relevant to the step.
+3. Before troubleshooting, read experimental_knowledge/known_failure_modes.md.
+4. Check there (device files, LOG.md) whether a proposed experiment was already done.
+5. Historical calibrations are provenance, not current values: re-verify them on the current cooldown.
+6. Label claims OBS / VAL / INT / HYP; a hypothesis is not promoted without its discriminating evidence.
+7. After meaningful findings, update the relevant file in place, mark superseded conclusions (with
+   the reason) instead of deleting them, and add a dated entry to experimental_knowledge/LOG.md.
+8. Before ending a substantial session, update the device file's current state and open questions.
